@@ -28,24 +28,26 @@ export function OutletCard({ outlet, onToggle }: OutletCardProps) {
 
   return (
     <View className="bg-white rounded-xl p-4 mx-4 mb-4 shadow-sm border border-gray-100">
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center flex-1">
-          {/* Outlet Icon */}
-          <View className="bg-gray-100 rounded-lg p-3 mr-4">
+      <View className="flex-row items-start justify-between">
+        <View className="flex-row items-start flex-1">
+          {/* Outlet Icon with Name on top */}
+          <View className="items-center mr-4">
+            <Text className="text-2xl font-semibold text-gray-800 mb-2">
+              {outlet.name}
+            </Text>
             <Image
               source={require("../assets/images/Socket.png")}
-              className="w-8 h-10"
+              className="w-23 h-16"
               resizeMode="contain"
             />
           </View>
 
-          <View className="flex-1">
-            <View className="flex-row items-center mb-1">
-              <Text className="text-lg font-semibold text-gray-800 mr-3">
-                {outlet.name}
-              </Text>
+          {/* Status, Power, and Timer - Vertical Layout */}
+          <View className="flex-1 pt-1">
+            {/* Status */}
+            <View className="mb-2">
               <View
-                className={`px-2 py-1 rounded-full ${getStatusColor(outlet.status)}`}
+                className={`px-2 py-1 rounded-full ${getStatusColor(outlet.status)} self-start`}
               >
                 <Text className="text-white text-xs font-medium">
                   {outlet.status}
@@ -53,16 +55,21 @@ export function OutletCard({ outlet, onToggle }: OutletCardProps) {
               </View>
             </View>
 
-            <View className="flex-row items-center">
+            {/* Power */}
+            <View className="flex-row items-center mb-2">
               <Image
                 source={require("../assets/images/FlashOn.png")}
-                className="w-4 h-4 mr-1"
+                className="w-4 h-4 mr-2"
                 resizeMode="contain"
               />
-              <Text className="text-gray-600 mr-4">{outlet.power} W</Text>
+              <Text className="text-gray-600">{outlet.power} W</Text>
+            </View>
+
+            {/* Timer */}
+            <View className="flex-row items-center">
               <Image
                 source={require("../assets/images/Clock.png")}
-                className="w-4 h-4 mr-1"
+                className="w-4 h-4 mr-2"
                 resizeMode="contain"
               />
               {outlet.duration ? (
@@ -74,16 +81,16 @@ export function OutletCard({ outlet, onToggle }: OutletCardProps) {
           </View>
         </View>
 
-        {/* Toggle Switch */}
+        {/* Toggle Switch - Aligned with Power Draw */}
         <TouchableOpacity
           onPress={() => onToggle?.(outlet.id)}
-          className={`w-12 h-6 rounded-full p-1 ${
+          className={`w-16 h-8 rounded-full p-1 mt-9 ${
             outlet.isOn ? "bg-[#0F0E41]" : "bg-gray-300"
           }`}
         >
           <View
-            className={`w-4 h-4 rounded-full bg-white transform transition-transform ${
-              outlet.isOn ? "translate-x-6" : "translate-x-0"
+            className={`w-6 h-6 rounded-full bg-white transform transition-transform ${
+              outlet.isOn ? "translate-x-8" : "translate-x-0"
             }`}
           />
         </TouchableOpacity>

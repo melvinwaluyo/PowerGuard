@@ -64,7 +64,7 @@ export default function App() {
   };
 
   return (
-    <View className="flex-1 bg-gray-50">
+    <View className="flex-1 bg-[#E7E7E7]">
       <PowerGuardHeader totalPower={totalPower} />
       <View className="flex-1">
         <OutletsList outlets={outlets} onToggleOutlet={handleToggleOutlet} />
