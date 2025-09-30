@@ -5,7 +5,7 @@ import "../global.css";
 export default function RootLayout() {
   return (
     <>
-      <StatusBar style="auto" />
+      <StatusBar style="light" backgroundColor="#0F0E41" translucent={false} />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>

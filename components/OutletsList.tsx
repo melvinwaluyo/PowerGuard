@@ -17,7 +17,11 @@ interface OutletsListProps {
 
 export function OutletsList({ outlets, onToggleOutlet }: OutletsListProps) {
   return (
-    <ScrollView className="flex-1 pt-6" showsVerticalScrollIndicator={false}>
+    <ScrollView
+      className="flex-1"
+      contentContainerStyle={{ paddingTop: 36, paddingBottom: 240 }}
+      showsVerticalScrollIndicator={false}
+    >
       {outlets.map((outlet) => (
         <OutletCard key={outlet.id} outlet={outlet} onToggle={onToggleOutlet} />
       ))}

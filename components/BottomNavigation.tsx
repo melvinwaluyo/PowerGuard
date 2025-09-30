@@ -1,36 +1,37 @@
-import { Image, TouchableOpacity, View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
+import GraphIcon from "../assets/images/Graph.svg";
+import HomeIcon from "../assets/images/Home.svg";
+import SettingsIcon from "../assets/images/Settings.svg";
+
+const BAR_SHADOW = {
+  shadowColor: "#0F0E41",
+  shadowOpacity: 0.16,
+  shadowOffset: { width: 0, height: 14 },
+  shadowRadius: 24,
+  elevation: 18,
+};
+
+const ICON_COLOR = "#E8EBFF";
 
 export function BottomNavigation() {
   return (
-    <View className="absolute bottom-6 left-0 right-0 flex items-center justify-center px-4">
-      <View className="bg-[#0F0E41] rounded-full flex-row items-center justify-center py-2 px-4 shadow-lg">
-        <TouchableOpacity className="p-2 mx-2">
-          <Image
-            source={require("../assets/images/GraphReport.png")}
-            className="w-14 h-14"
-            style={{ tintColor: "white" }}
-            resizeMode="contain"
-          />
+    <View className="absolute bottom-8 left-0 right-0 items-center">
+      <View
+        className="w-[248px] flex-row items-center justify-around rounded-full bg-[#0F0E41] px-5 py-3"
+        style={BAR_SHADOW}
+      >
+        <TouchableOpacity className="items-center justify-center">
+          <GraphIcon width={26} height={26} color={ICON_COLOR} />
         </TouchableOpacity>
 
-        <TouchableOpacity className="p-2 mx-2">
-          <View className="w-16 h-16 bg-white rounded-full flex items-center justify-center">
-            <Image
-              source={require("../assets/images/Home.png")}
-              className="w-14 h-14"
-              style={{ tintColor: "#0F0E41" }}
-              resizeMode="contain"
-            />
+        <TouchableOpacity className="items-center justify-center">
+          <View className="w-[56px] h-[56px] rounded-full bg-white items-center justify-center">
+            <HomeIcon width={26} height={26} color="#0F0E41" />
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity className="p-3 mx-3">
-          <Image
-            source={require("../assets/images/Settings.png")}
-            className="w-14 h-14"
-            style={{ tintColor: "white" }}
-            resizeMode="contain"
-          />
+        <TouchableOpacity className="items-center justify-center">
+          <SettingsIcon width={26} height={26} color={ICON_COLOR} />
         </TouchableOpacity>
       </View>
     </View>
