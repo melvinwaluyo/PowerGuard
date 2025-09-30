@@ -1,73 +1,36 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { View } from "react-native";
+import { useRouter } from "expo-router";
 import "../../global.css";
 
 import { BottomNavigation } from "@/components/BottomNavigation";
 import { OutletsList } from "@/components/OutletsList";
 import { PowerGuardHeader } from "@/components/PowerGuardHeader";
+import { useOutlets } from "@/context/OutletContext";
 import { Outlet } from "@/types/outlet";
 
 export default function App() {
-  const [outlets, setOutlets] = useState<Outlet[]>([
-    {
-      id: 1,
-      name: "Outlet 1",
-      status: "Disconnected",
-      power: 250,
-      duration: null,
-      isOn: false,
-    },
-    {
-      id: 2,
-      name: "Outlet 2",
-      status: "Connected",
-      power: 250,
-      duration: "2h 5m 45s",
-      isOn: true,
-    },
-    {
-      id: 3,
-      name: "Outlet 3",
-      status: "Disconnected",
-      power: 0,
-      duration: null,
-      isOn: false,
-    },
-    {
-      id: 4,
-      name: "Outlet 4",
-      status: "Connected",
-      power: 250,
-      duration: "2h 5m 45s",
-      isOn: true,
-    },
-  ]);
+  const router = useRouter();
+  const { outlets, toggleOutlet } = useOutlets();
 
-  const totalPower = outlets.reduce(
-    (sum, outlet) => sum + (outlet.isOn ? outlet.power : 0),
-    0
+  const totalPower = useMemo(
+    () => outlets.reduce((sum, outlet) => sum + (outlet.isOn ? outlet.powerDraw : 0), 0),
+    [outlets]
   );
 
-  const handleToggleOutlet = (id: number) => {
-    setOutlets((prev) =>
-      prev.map((outlet) =>
-        outlet.id === id
-          ? {
-              ...outlet,
-              isOn: !outlet.isOn,
-              status: !outlet.isOn ? "Connected" : "Disconnected",
-              power: !outlet.isOn ? 250 : 0,
-            }
-          : outlet
-      )
-    );
+  const handlePressOutlet = (outlet: Outlet) => {
+    router.push({ pathname: "/outlet/[id]", params: { id: String(outlet.id) } });
   };
 
   return (
     <View className="flex-1 bg-[#E7E7E7]">
       <PowerGuardHeader totalPower={totalPower} />
       <View className="flex-1">
-        <OutletsList outlets={outlets} onToggleOutlet={handleToggleOutlet} />
+        <OutletsList
+          outlets={outlets}
+          onToggleOutlet={toggleOutlet}
+          onPressOutlet={handlePressOutlet}
+        />
       </View>
       <BottomNavigation />
     </View>
