@@ -2,7 +2,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { ScrollView, Switch, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomNavigation } from "@/components/BottomNavigation";
 import { TimerPicker } from "@/components/TimerPicker";
@@ -35,6 +35,7 @@ const DEFAULT_TIMER: OutletTimerSetting = {
 
 export default function OutletDetailsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const outletIdParam = Array.isArray(id) ? id[0] : id;
   const outletId = useMemo(() => Number(outletIdParam), [outletIdParam]);
@@ -76,7 +77,10 @@ export default function OutletDetailsScreen() {
 
   if (!outlet) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center bg-[#E7E7E7] px-6">
+      <View
+        className="flex-1 items-center justify-center bg-[#E7E7E7] px-6"
+        style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+      >
         <Text className="text-lg font-semibold text-[#0F0E41]">
           Outlet not found
         </Text>
@@ -86,7 +90,7 @@ export default function OutletDetailsScreen() {
         >
           <Text className="text-[#0F0E41] font-semibold">Go back</Text>
         </TouchableOpacity>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -107,7 +111,7 @@ export default function OutletDetailsScreen() {
       : "Preset 15 min timer";
 
   return (
-    <SafeAreaView className="flex-1 bg-[#E7E7E7]">
+    <View className="flex-1 bg-[#E7E7E7]" style={{ paddingTop: insets.top }}>
       <View className="px-6 pt-2 pb-4">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity
@@ -183,7 +187,7 @@ export default function OutletDetailsScreen() {
       </ScrollView>
 
       <BottomNavigation />
-    </SafeAreaView>
+    </View>
   );
 }
 

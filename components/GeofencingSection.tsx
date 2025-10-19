@@ -49,14 +49,20 @@ export default function GeofencingSection({ enabled, onToggle }: GeofencingSecti
       <View className="flex-row justify-between items-center mb-4">
         <Text className="text-base text-[#0F0E41] font-medium">Geofencing</Text>
         <TouchableOpacity
+          activeOpacity={0.7}
           onPress={() => onToggle(!enabled)}
-          className={`w-12 h-6 rounded-xl p-0.5 justify-center ${
-            enabled ? "bg-[#0F0E41]" : "bg-[#D1D5DB]"
+          className={`rounded-full p-0.5 ${
+            enabled ? "bg-[#0F0E41]" : "bg-[#CBD2E9]"
           }`}
+          style={{ width: 52, height: 28 }}
         >
           <View
-            className="w-5 h-5 rounded-full bg-white"
-            style={{ transform: [{ translateX: enabled ? 24 : 0 }] }}
+            className="rounded-full bg-white"
+            style={{
+              width: 24,
+              height: 24,
+              alignSelf: enabled ? "flex-end" : "flex-start",
+            }}
           />
         </TouchableOpacity>
       </View>
