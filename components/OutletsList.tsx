@@ -12,7 +12,7 @@ export function OutletsList({ outlets, onToggleOutlet, onPressOutlet }: OutletsL
   return (
     <ScrollView
       className="flex-1"
-      contentContainerStyle={{ paddingTop: 36, paddingBottom: 240 }}
+      contentContainerStyle={{ paddingTop: 36, paddingBottom: 140 }}
       showsVerticalScrollIndicator={false}
     >
       {outlets.map((outlet) => (
