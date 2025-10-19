@@ -19,9 +19,11 @@
       }
     },
     "ios": {
+      "bundleIdentifier": "com.mlvwly.PowerGuard",
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "PowerGuard needs your location to set your home address for geofencing features."
+        "NSLocationWhenInUseUsageDescription": "PowerGuard needs your location to set your home address for geofencing features.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -41,7 +43,12 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
       "package": "com.anonymous.PowerGuard"
     },
     "web": {
@@ -74,6 +81,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b0fe4763-46db-427e-92f5-a4b73c69fc59"
+      }
+    },
+    "owner": "mlvwly"
   }
 }

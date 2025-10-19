@@ -25,20 +25,33 @@ export default function PinLocationScreen() {
   const handleLocationChange = async (lat: number, lng: number) => {
     setSelectedLocation(prev => ({ ...prev, latitude: lat, longitude: lng }));
 
-    // Reverse geocode to get address
+    // Reverse geocode to get address (not available on web in SDK 49+)
     try {
       setIsLoadingAddress(true);
-      const [geocode] = await Location.reverseGeocodeAsync({
-        latitude: lat,
-        longitude: lng,
-      });
 
-      setSelectedLocation({
-        latitude: lat,
-        longitude: lng,
-        address: `${geocode.streetNumber || ''} ${geocode.street || ''}`.trim() || 'Unknown Location',
-        city: `${geocode.city || ''}, ${geocode.region || ''}`.trim(),
-      });
+      if (Platform.OS === 'web') {
+        // For web, just show coordinates
+        setSelectedLocation({
+          latitude: lat,
+          longitude: lng,
+          address: `Lat: ${lat.toFixed(6)}`,
+          city: `Lng: ${lng.toFixed(6)}`,
+        });
+      } else {
+        // For native, use reverse geocoding
+        const [geocode] = await Location.reverseGeocodeAsync({
+          latitude: lat,
+          longitude: lng,
+        });
+
+        setSelectedLocation({
+          latitude: lat,
+          longitude: lng,
+          address: `${geocode.streetNumber || ''} ${geocode.street || ''}`.trim() || 'Unknown Location',
+          city: `${geocode.city || ''}, ${geocode.region || ''}`.trim(),
+        });
+      }
+
       setIsLoadingAddress(false);
     } catch (error) {
       console.error('Error geocoding:', error);
@@ -60,10 +73,16 @@ export default function PinLocationScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
+        if (Platform.OS === 'web') {
+          alert('Location permission denied. Please enable location access in your browser settings.');
+        }
+        console.log('Location permission status:', status);
         return;
       }
 
-      const position = await Location.getCurrentPositionAsync({});
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
       handleLocationChange(position.coords.latitude, position.coords.longitude);
 
       // Update map position on mobile via WebView
@@ -77,6 +96,10 @@ export default function PinLocationScreen() {
       }
     } catch (error) {
       console.error('Error getting location:', error);
+      if (Platform.OS === 'web') {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        alert(`Failed to get location: ${errorMessage}\n\nMake sure you're accessing via localhost and have granted location permissions.`);
+      }
     }
   };
 

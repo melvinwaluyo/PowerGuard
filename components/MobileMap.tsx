@@ -21,34 +21,61 @@ export function MobileMap() {
       // Request permission
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Denied',
-          'Please enable location permissions to use this feature.'
-        );
+        const message = Platform.OS === 'web'
+          ? 'Please enable location permissions in your browser settings. Make sure you\'re accessing via localhost.'
+          : 'Please enable location permissions to use this feature.';
+        Alert.alert('Permission Denied', message);
         setIsLoadingLocation(false);
         return;
       }
 
       // Get current position
-      const position = await Location.getCurrentPositionAsync({});
-
-      // Reverse geocode to get address
-      const [geocode] = await Location.reverseGeocodeAsync({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
       });
 
-      setLocation({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        address: `${geocode.streetNumber || ''} ${geocode.street || 'Unknown Street'}`.trim(),
-        city: `${geocode.city || ''}, ${geocode.region || ''}, ${geocode.postalCode || ''}`,
-      });
+      // Reverse geocode to get address (not available on web in SDK 49+)
+      if (Platform.OS === 'web') {
+        // For web, just show coordinates
+        setLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          address: `Lat: ${position.coords.latitude.toFixed(6)}`,
+          city: `Lng: ${position.coords.longitude.toFixed(6)}`,
+        });
+      } else {
+        // For native, use reverse geocoding
+        try {
+          const [geocode] = await Location.reverseGeocodeAsync({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+
+          setLocation({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            address: `${geocode.streetNumber || ''} ${geocode.street || 'Unknown Street'}`.trim(),
+            city: `${geocode.city || ''}, ${geocode.region || ''}, ${geocode.postalCode || ''}`,
+          });
+        } catch (geocodeError) {
+          // Fallback to coordinates if geocoding fails
+          setLocation({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            address: `Lat: ${position.coords.latitude.toFixed(6)}`,
+            city: `Lng: ${position.coords.longitude.toFixed(6)}`,
+          });
+        }
+      }
 
       setIsLoadingLocation(false);
     } catch (error) {
       console.error('Error getting location:', error);
-      Alert.alert('Error', 'Failed to get your current location. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const fullMessage = Platform.OS === 'web'
+        ? `Failed to get location: ${errorMessage}\n\nTip: Access via http://localhost:8081 and allow location permissions.`
+        : 'Failed to get your current location. Please try again.';
+      Alert.alert('Error', fullMessage);
       setIsLoadingLocation(false);
     }
   };

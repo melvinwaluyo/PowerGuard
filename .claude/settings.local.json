@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npx expo install react-native-webview)",
       "Bash(netstat -ano)",
-      "Bash(findstr :8081)"
+      "Bash(findstr :8081)",
+      "Bash(eas build:configure)"
     ],
     "deny": [],
     "ask": []
