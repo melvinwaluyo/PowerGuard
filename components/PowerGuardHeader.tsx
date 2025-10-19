@@ -1,37 +1,40 @@
 import { Platform, StatusBar, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface PowerGuardHeaderProps {
   totalPower: number;
 }
 
-const BASE_TOP_PADDING = 32;
-const BASE_BOTTOM_PADDING = 40;
+const BASE_TOP_PADDING = 16;
+const BASE_BOTTOM_PADDING = 20;
 
 export function PowerGuardHeader({ totalPower }: PowerGuardHeaderProps) {
-  const topInset =
-    (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0) +
-    BASE_TOP_PADDING;
+  const insets = useSafeAreaInsets();
+
+  const topInset = Platform.OS === "android"
+    ? (StatusBar.currentHeight ?? 0) + BASE_TOP_PADDING
+    : insets.top + BASE_TOP_PADDING;
 
   return (
     <View
-      className="bg-[#0F0E41] px-6 rounded-b-[16px]"
+      className="bg-[#0F0E41] px-6"
       style={{ paddingTop: topInset, paddingBottom: BASE_BOTTOM_PADDING }}
     >
-      <Text className="text-white text-[34px] leading-[42px] font-extrabold text-center">
+      <Text className="text-white text-[24px] font-bold text-center">
         PowerGuard
       </Text>
       <View
-        className="bg-white rounded-full py-2.5 px-7 mt-5 self-center"
+        className="bg-white rounded-full py-2 px-5 mt-3 self-center"
         style={{
           shadowColor: "#0F0E41",
           shadowOpacity: 0.12,
-          shadowOffset: { width: 0, height: 6 },
-          shadowRadius: 12,
-          elevation: 5,
+          shadowOffset: { width: 0, height: 4 },
+          shadowRadius: 8,
+          elevation: 4,
         }}
       >
-        <Text className="text-[#0F0E41] font-semibold text-base">
-          Total Power Draw : {totalPower} W
+        <Text className="text-[#0F0E41] font-semibold text-sm">
+          Total Power Draw: {totalPower} W
         </Text>
       </View>
     </View>

@@ -1,46 +1,73 @@
-import { useNavigation } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Image, TouchableOpacity, View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
+import { useRouter } from "expo-router";
+import GraphIcon from "../assets/images/Graph.svg";
+import HomeIcon from "../assets/images/Home.svg";
+import SettingsIcon from "../assets/images/Settings.svg";
 
-type RootStackParamList = {
-  index: undefined;
-  reporting: undefined;
-  settings: undefined;
+const BAR_SHADOW = {
+  shadowColor: "#0F0E41",
+  shadowOpacity: 0.16,
+  shadowOffset: { width: 0, height: 14 },
+  shadowRadius: 24,
+  elevation: 18,
 };
 
-export function BottomNavigation() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+const ICON_COLOR = "#E8EBFF";
+
+interface BottomNavigationProps {
+  activeTab?: "home" | "reporting" | "settings";
+}
+
+export function BottomNavigation({ activeTab = "home" }: BottomNavigationProps) {
+  const router = useRouter();
+
+  const isHome = activeTab === "home";
+  const isReporting = activeTab === "reporting";
+  const isSettings = activeTab === "settings";
 
   return (
-    <View className="absolute bottom-6 left-0 right-0 flex items-center justify-center px-4">
-      <View className="bg-[#0F0E41] rounded-full flex-row items-center justify-center py-3 px-6 self-center shadow-lg">
-        <TouchableOpacity className="p-2 mx-2" onPress={() => navigation.navigate("reporting")}>
-          <Image
-            source={require("../assets/images/GraphReport.png")}
-            className="w-6 h-6"
-            style={{ tintColor: "white" }}
-            resizeMode="contain"
-          />
+    <View className="absolute bottom-8 left-0 right-0 items-center">
+      <View
+        className="w-[280px] flex-row items-center justify-between rounded-full bg-[#0F0E41] px-6 py-3"
+        style={BAR_SHADOW}
+      >
+        <TouchableOpacity
+          className="items-center justify-center w-[56px] h-[56px]"
+          onPress={() => router.push("/reporting")}
+        >
+          {isReporting ? (
+            <View className="w-[56px] h-[56px] rounded-full bg-white items-center justify-center">
+              <GraphIcon width={26} height={26} color="#0F0E41" />
+            </View>
+          ) : (
+            <GraphIcon width={26} height={26} color={ICON_COLOR} />
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity className="p-2 mx-2" onPress={() => navigation.navigate("index")}>
-          <View className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
-            <Image
-              source={require("../assets/images/Home.png")}
-              className="w-5 h-5"
-              style={{ tintColor: "#0F0E41" }}
-              resizeMode="contain"
-            />
-          </View>
+        <TouchableOpacity
+          className="items-center justify-center w-[56px] h-[56px]"
+          onPress={() => router.push("/")}
+        >
+          {isHome ? (
+            <View className="w-[56px] h-[56px] rounded-full bg-white items-center justify-center">
+              <HomeIcon width={26} height={26} color="#0F0E41" />
+            </View>
+          ) : (
+            <HomeIcon width={26} height={26} color={ICON_COLOR} />
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity className="p-2 mx-2" onPress={() => navigation.navigate("settings")}>
-          <Image
-            source={require("../assets/images/Settings.png")}
-            className="w-6 h-6"
-            style={{ tintColor: "white" }}
-            resizeMode="contain"
-          />
+        <TouchableOpacity
+          className="items-center justify-center w-[56px] h-[56px]"
+          onPress={() => router.push("/settings")}
+        >
+          {isSettings ? (
+            <View className="w-[56px] h-[56px] rounded-full bg-white items-center justify-center">
+              <SettingsIcon width={26} height={26} color="#0F0E41" />
+            </View>
+          ) : (
+            <SettingsIcon width={26} height={26} color={ICON_COLOR} />
+          )}
         </TouchableOpacity>
       </View>
     </View>

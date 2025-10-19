@@ -1,171 +1,123 @@
+import { TimerPicker } from "@/components/TimerPicker";
+import { OutletTimerSetting } from "@/types/outlet";
+import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import {
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
-} from "react-native";
-
-// Web-specific component with wheel support
-const TimeInput = ({ value, onChange, label }: { value: number; onChange: (value: number) => void; label: string }) => {
-  const [inputValue, setInputValue] = useState(value.toString().padStart(2, '0'));
-
-  const handleTextChange = (text: string) => {
-    // Only allow numbers
-    const numericText = text.replace(/[^0-9]/g, '');
-    setInputValue(numericText);
-    
-    if (numericText) {
-      const numValue = parseInt(numericText);
-      onChange(Math.max(0, Math.min(59, numValue)));
-    }
-  };
-
-  const handleFocus = () => {
-    // Clear the input when focused for fresh typing
-    setInputValue('');
-  };
-
-  const handleBlur = () => {
-    // When blur, format the value back to 2 digits
-    if (inputValue === '') {
-      setInputValue(value.toString().padStart(2, '0'));
-    } else {
-      const numValue = parseInt(inputValue) || 0;
-      setInputValue(numValue.toString().padStart(2, '0'));
-    }
-  };
-
-  // For web: proper wheel event handling
-  if (Platform.OS === "web") {
-    const handleWheel = (event: any) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const delta = Math.sign(event.deltaY);
-      const newValue = value - delta;
-      onChange(Math.max(0, Math.min(59, newValue)));
-      // Update local input value
-      setInputValue(newValue.toString().padStart(2, '0'));
-    };
-
-    return (
-      <View style={styles.inputSection}>
-        <div 
-          style={{
-            position: 'relative',
-          }}
-          onWheel={handleWheel}
-        >
-          <TextInput
-            style={[styles.timeInput, styles.webTimeInput]}
-            value={inputValue}
-            onChangeText={handleTextChange}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            keyboardType="number-pad"
-            maxLength={2}
-            textAlign="center"
-          />
-        </div>
-        <Text style={styles.timeLabel}>{label}</Text>
-      </View>
-    );
-  }
-
-  // For mobile: regular TextInput
-  return (
-    <View style={styles.inputSection}>
-      <TextInput
-        style={styles.timeInput}
-        value={inputValue}
-        onChangeText={handleTextChange}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        keyboardType="number-pad"
-        maxLength={2}
-        textAlign="center"
-      />
-      <Text style={styles.timeLabel}>{label}</Text>
-    </View>
-  );
-};
+import { Text, TouchableOpacity, View } from "react-native";
 
 export default function AutoShutdownSection() {
-  const [currentMinutes, setCurrentMinutes] = useState(15);
-  const [currentSeconds, setCurrentSeconds] = useState(0);
-  const [draftMinutes, setDraftMinutes] = useState(15);
-  const [draftSeconds, setDraftSeconds] = useState(0);
+  const [currentTimer, setCurrentTimer] = useState<OutletTimerSetting>({
+    hours: 0,
+    minutes: 15,
+    seconds: 0,
+    isActive: false,
+  });
+  const [draftTimer, setDraftTimer] = useState<OutletTimerSetting>({
+    hours: 0,
+    minutes: 15,
+    seconds: 0,
+    isActive: false,
+  });
   const [isEditing, setIsEditing] = useState(false);
 
   const handleSet = () => {
-    setCurrentMinutes(draftMinutes);
-    setCurrentSeconds(draftSeconds);
+    setCurrentTimer(draftTimer);
     setIsEditing(false);
   };
 
   const handleEdit = () => {
-    setDraftMinutes(currentMinutes);
-    setDraftSeconds(currentSeconds);
+    setDraftTimer(currentTimer);
     setIsEditing(true);
   };
 
   const handleCancel = () => {
-    setDraftMinutes(currentMinutes);
-    setDraftSeconds(currentSeconds);
+    setDraftTimer(currentTimer);
     setIsEditing(false);
   };
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Auto Shutdown Timer</Text>
-      <Text style={styles.subtitle}>Time with color of skin: performance:</Text>
+    <View
+      className="bg-white rounded-2xl p-5 mb-4 w-full max-w-[400px]"
+      style={{
+        elevation: 4,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      }}
+    >
+      <Text className="text-lg font-semibold text-[#0F0E41] mb-1">
+        Auto Shutdown Timer
+      </Text>
+      <Text className="text-sm text-[#6B7280] mb-5">
+        Time until auto-off after geofence alert
+      </Text>
 
       {!isEditing && (
-        <View style={styles.currentTimeContainer}>
-          <View style={styles.displayTime}>
-            <Text style={styles.displayTimeText}>
-              {currentMinutes} minutes : {currentSeconds} second
-            </Text>
+        <View className="items-center">
+          {/* Timer Display Card */}
+          <View className="bg-[#E8EBFF] rounded-2xl p-6 w-full items-center mb-4">
+            <View className="flex-row items-center justify-center">
+              <View className="w-12 h-12 bg-[#0F0E41] rounded-full items-center justify-center mr-3">
+                <Ionicons name="timer-outline" size={24} color="#fff" />
+              </View>
+              <View>
+                <Text className="text-xs text-[#6B7280] mb-1">Timer Set</Text>
+                <Text className="text-[32px] font-bold text-[#0F0E41] tracking-wider">
+                  {String(currentTimer.hours).padStart(2, "0")}:
+                  {String(currentTimer.minutes).padStart(2, "0")}:
+                  {String(currentTimer.seconds).padStart(2, "0")}
+                </Text>
+              </View>
+            </View>
           </View>
-          <TouchableOpacity style={styles.editButton} onPress={handleEdit}>
-            <Text style={styles.editButtonText}>Edit</Text>
+
+          {/* Edit Button */}
+          <TouchableOpacity
+            className="bg-[#0F0E41] rounded-xl px-8 py-3 flex-row items-center"
+            onPress={handleEdit}
+            style={{
+              elevation: 3,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.15,
+              shadowRadius: 3,
+            }}
+          >
+            <Ionicons
+              name="create-outline"
+              size={18}
+              color="#fff"
+              style={{ marginRight: 6 }}
+            />
+            <Text className="text-white font-semibold text-base">
+              Edit Timer
+            </Text>
           </TouchableOpacity>
         </View>
       )}
 
       {isEditing && (
         <>
-          <View style={styles.timeInputContainer}>
-            {/* Minutes Input */}
-            <TimeInput 
-              value={draftMinutes}
-              onChange={setDraftMinutes}
-              label="minutes"
-            />
-
-            <Text style={styles.colon}>:</Text>
-
-            {/* Seconds Input */}
-            <TimeInput 
-              value={draftSeconds}
-              onChange={setDraftSeconds}
-              label="second"
-            />
+          <View className="rounded-[24px] bg-[#F3F4FA] px-4 py-5 mb-4">
+            <TimerPicker value={draftTimer} onChange={setDraftTimer} />
           </View>
 
-          
-
-          
-
-          {/* Action Buttons */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+          <View className="flex-row justify-between gap-3">
+            <TouchableOpacity
+              className="flex-1 bg-[#F3F4F6] rounded-lg p-2.5 items-center border border-[#D1D5DB]"
+              onPress={handleCancel}
+            >
+              <Text className="text-[#374151] font-semibold text-sm">
+                Cancel
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.setButton} onPress={handleSet}>
-              <Text style={styles.setButtonText}>Set Timer</Text>
+            <TouchableOpacity
+              className="flex-1 bg-[#0F0E41] rounded-lg p-2.5 items-center"
+              onPress={handleSet}
+            >
+              <Text className="text-white font-semibold text-sm">
+                Set Timer
+              </Text>
             </TouchableOpacity>
           </View>
         </>
@@ -173,152 +125,3 @@ export default function AutoShutdownSection() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    width: "100%",
-    maxWidth: 400,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#0F0E41",
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginBottom: 20,
-  },
-  currentTimeContainer: {
-    alignItems: "center",
-  },
-  displayTime: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 12,
-    padding: 16,
-    width: "100%",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  displayTimeText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#0F0E41",
-  },
-  editButton: {
-    backgroundColor: "#0F0E41",
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-  },
-  editButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  timeInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  inputSection: {
-    alignItems: "center",
-    marginHorizontal: 12,
-  },
-  timeInput: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#0F0E41",
-    borderWidth: 2,
-    borderColor: "#E2E8F0",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    width: 80,
-    backgroundColor: "#F8FAFC",
-  },
-  webTimeInput: {
-    ...Platform.select({
-      web: {
-        cursor: 'pointer',
-        outline: 'none',
-        userSelect: 'none',
-      },
-    }),
-  },
-  timeLabel: {
-    fontSize: 14,
-    color: "#6B7280",
-    fontWeight: "500",
-    marginTop: 8,
-  },
-  colon: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#0F0E41",
-    marginHorizontal: 8,
-  },
-  instructions: {
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  instructionsText: {
-    fontSize: 12,
-    color: "#94A3B8",
-    fontStyle: "italic",
-  },
-  selectedTime: {
-    backgroundColor: "#0F0E41",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  selectedTimeText: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "white",
-  },
-  buttonContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 8,
-    padding: 10,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-  },
-  cancelButtonText: {
-    color: "#374151",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  setButton: {
-    flex: 1,
-    backgroundColor: "#0F0E41",
-    borderRadius: 8,
-    padding: 10,
-    alignItems: "center",
-  },
-  setButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-});

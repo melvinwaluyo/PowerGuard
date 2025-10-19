@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { ScrollView, Switch, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useMemo, useState } from "react";
+import { ScrollView, Switch, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomNavigation } from "@/components/BottomNavigation";
 import { TimerPicker } from "@/components/TimerPicker";
@@ -14,7 +14,10 @@ import {
   OutletTimerSetting,
 } from "@/types/outlet";
 
-const LOG_CATEGORY_META: Record<OutletLogCategory, { background: string; color: string; label: string }> = {
+const LOG_CATEGORY_META: Record<
+  OutletLogCategory,
+  { background: string; color: string; label: string }
+> = {
   power: { background: "#E8EBFF", color: "#0F0E41", label: "PW" },
   automation: { background: "#E7F5FF", color: "#125B9A", label: "AT" },
   safety: { background: "#FFE8EC", color: "#B42318", label: "SF" },
@@ -32,17 +35,20 @@ const DEFAULT_TIMER: OutletTimerSetting = {
 
 export default function OutletDetailsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const outletIdParam = Array.isArray(id) ? id[0] : id;
   const outletId = useMemo(() => Number(outletIdParam), [outletIdParam]);
 
   const { getOutletById, toggleOutlet, updateOutlet } = useOutlets();
-  const outlet = Number.isFinite(outletId) ? getOutletById(outletId) : undefined;
+  const outlet = Number.isFinite(outletId)
+    ? getOutletById(outletId)
+    : undefined;
 
   const [activeTab, setActiveTab] = useState<DetailTab>("status");
 
   const handleToggleTimer = () => {
-    if (!outlet) {
+    if (!outlet || !outlet.isOn) {
       return;
     }
 
@@ -57,7 +63,7 @@ export default function OutletDetailsScreen() {
   };
 
   const handleTimerChange = (nextTimer: OutletTimerSetting) => {
-    if (!outlet) {
+    if (!outlet || !outlet.isOn) {
       return;
     }
 
@@ -71,17 +77,24 @@ export default function OutletDetailsScreen() {
 
   if (!outlet) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center bg-[#E7E7E7] px-6">
-        <Text className="text-lg font-semibold text-[#0F0E41]">Outlet not found</Text>
+      <View
+        className="flex-1 items-center justify-center bg-[#E7E7E7] px-6"
+        style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+      >
+        <Text className="text-lg font-semibold text-[#0F0E41]">
+          Outlet not found
+        </Text>
         <TouchableOpacity
           className="mt-6 rounded-full border border-[#0F0E41] px-6 py-3"
           onPress={() => router.back()}
         >
           <Text className="text-[#0F0E41] font-semibold">Go back</Text>
         </TouchableOpacity>
-      </SafeAreaView>
+      </View>
     );
   }
+
+  const isTimerEnabled = outlet.isOn;
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "status", label: "Status" },
@@ -89,15 +102,16 @@ export default function OutletDetailsScreen() {
   ];
 
   const timer = outlet.timer ?? DEFAULT_TIMER;
-  const timerButtonLabel = outlet.timer?.isActive ? "Stop" : "Start";
-  const timerStatusText = outlet.timer
-    ? outlet.timer.isActive
-      ? "Timer running"
-      : "Timer ready"
-    : "Preset 15 min timer";
+  const timerStatusText = !isTimerEnabled
+    ? "Turn on the outlet to use the timer"
+    : outlet.timer
+      ? outlet.timer.isActive
+        ? "Timer running"
+        : "Timer ready"
+      : "Preset 15 min timer";
 
   return (
-    <SafeAreaView className="flex-1 bg-[#E7E7E7]">
+    <View className="flex-1 bg-[#E7E7E7]" style={{ paddingTop: insets.top }}>
       <View className="px-6 pt-2 pb-4">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity
@@ -150,7 +164,11 @@ export default function OutletDetailsScreen() {
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 28, paddingBottom: 220 }}
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingTop: 28,
+          paddingBottom: 220,
+        }}
         showsVerticalScrollIndicator={false}
       >
         {activeTab === "status" ? (
@@ -161,7 +179,7 @@ export default function OutletDetailsScreen() {
             onTimerChange={handleTimerChange}
             timerStatusText={timerStatusText}
             onToggleTimer={handleToggleTimer}
-            timerButtonLabel={timerButtonLabel}
+            isTimerEnabled={isTimerEnabled}
           />
         ) : (
           <LogSection logs={outlet.logs} />
@@ -169,7 +187,7 @@ export default function OutletDetailsScreen() {
       </ScrollView>
 
       <BottomNavigation />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -180,7 +198,7 @@ function StatusSection({
   onTimerChange,
   timerStatusText,
   onToggleTimer,
-  timerButtonLabel,
+  isTimerEnabled,
 }: {
   outlet: Outlet;
   onTogglePower: () => void;
@@ -188,7 +206,7 @@ function StatusSection({
   onTimerChange: (value: OutletTimerSetting) => void;
   timerStatusText: string;
   onToggleTimer: () => void;
-  timerButtonLabel: string;
+  isTimerEnabled: boolean;
 }) {
   const connectionStyles =
     outlet.connection === "Connected"
@@ -201,12 +219,25 @@ function StatusSection({
     { label: "Current Power Draw", value: `${outlet.powerDraw} W` },
   ];
 
+  const timerBadgeStyles = isTimerEnabled
+    ? timer.isActive
+      ? { background: "#DEF7EC", text: "#0E9F6E" }
+      : { background: "#F3F4FA", text: "#6E6F82" }
+    : { background: "#E5E7F3", text: "#9AA0B8" };
+
+  const showRunningTimer = timer.isActive && isTimerEnabled;
+
   return (
     <View>
       <View className="mb-5 rounded-[28px] bg-white px-6 py-5">
         {statusRows.map((row) => (
-          <View key={row.label} className="flex-row items-center justify-between py-2">
-            <Text className="text-[13px] font-medium text-[#6E6F82]">{row.label}</Text>
+          <View
+            key={row.label}
+            className="flex-row items-center justify-between py-2"
+          >
+            <Text className="text-[13px] font-medium text-[#6E6F82]">
+              {row.label}
+            </Text>
             {row.isBadge ? (
               <View
                 className="rounded-full px-3 py-1"
@@ -231,9 +262,13 @@ function StatusSection({
       <View className="mb-5 rounded-[28px] bg-white px-6 py-5">
         <View className="flex-row items-center justify-between">
           <View className="max-w-[70%]">
-            <Text className="text-[16px] font-semibold text-[#0F0E41]">Power</Text>
+            <Text className="text-[16px] font-semibold text-[#0F0E41]">
+              Power
+            </Text>
             <Text className="mt-1 text-[12px] text-[#6E6F82]">
-              {outlet.isOn ? "Outlet is currently active" : "Outlet is turned off"}
+              {outlet.isOn
+                ? "Outlet is currently active"
+                : "Outlet is turned off"}
             </Text>
           </View>
           <Switch
@@ -247,22 +282,78 @@ function StatusSection({
       </View>
 
       <View className="rounded-[28px] bg-white px-6 py-5">
-        <View className="flex-row items-center justify-between">
-          <Text className="text-[16px] font-semibold text-[#0F0E41]">Timer</Text>
-          <Text className="text-[12px] text-[#6E6F82]">{timerStatusText}</Text>
-        </View>
-
-        <View className="mt-5 rounded-[24px] bg-[#F3F4FA] px-4 py-5">
-          <TimerPicker value={timer} onChange={onTimerChange} />
-
-          <TouchableOpacity
-            className="mt-6 self-center rounded-full bg-[#0F0E41] px-8 py-3"
-            onPress={onToggleTimer}
-            activeOpacity={0.9}
+        <View className="flex-row items-center justify-between mb-5">
+          <Text className="text-[16px] font-semibold text-[#0F0E41]">
+            Timer
+          </Text>
+          <View
+            className="px-3 py-1 rounded-full"
+            style={{ backgroundColor: timerBadgeStyles.background }}
           >
-            <Text className="text-[14px] font-semibold text-white">{timerButtonLabel}</Text>
-          </TouchableOpacity>
+            <Text
+              className="text-[11px] font-semibold"
+              style={{ color: timerBadgeStyles.text }}
+            >
+              {timerStatusText}
+            </Text>
+          </View>
         </View>
+
+        {showRunningTimer ? (
+          <View className="rounded-[24px] bg-[#F3F4FA] px-6 py-6">
+            <View className="items-center mb-5">
+              <Text className="text-[48px] font-bold text-[#0F0E41] tracking-wider">
+                {String(timer.hours).padStart(2, "0")}:
+                {String(timer.minutes).padStart(2, "0")}:
+                {String(timer.seconds).padStart(2, "0")}
+              </Text>
+              <Text className="text-[13px] text-[#6E6F82] mt-2">
+                Time Remaining
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              className={`rounded-full px-8 py-3.5 ${
+                isTimerEnabled ? "bg-[#EF4444]" : "bg-[#CBD2E9]"
+              }`}
+              onPress={onToggleTimer}
+              activeOpacity={isTimerEnabled ? 0.9 : 1}
+              disabled={!isTimerEnabled}
+            >
+              <Text className="text-[14px] font-semibold text-white text-center">
+                Stop Timer
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View className="rounded-[24px] bg-[#F3F4FA] px-4 py-5">
+            <View
+              pointerEvents={isTimerEnabled ? "auto" : "none"}
+              className={isTimerEnabled ? undefined : "opacity-40"}
+            >
+              <TimerPicker value={timer} onChange={onTimerChange} />
+            </View>
+
+            <TouchableOpacity
+              className={`mt-6 self-center rounded-full px-8 py-3 ${
+                isTimerEnabled ? "bg-[#0F0E41]" : "bg-[#9AA0B8]"
+              }`}
+              onPress={onToggleTimer}
+              activeOpacity={isTimerEnabled ? 0.9 : 1}
+              disabled={!isTimerEnabled}
+            >
+              <Text className="text-[14px] font-semibold text-white">
+                Start Timer
+              </Text>
+            </TouchableOpacity>
+
+            {!isTimerEnabled ? (
+              <Text className="mt-4 text-center text-[12px] text-[#6E6F82]">
+                Turn on the outlet to configure the timer.
+              </Text>
+            ) : null}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -272,7 +363,9 @@ function LogSection({ logs }: { logs: OutletLogEntry[] }) {
   if (!logs.length) {
     return (
       <View className="items-center rounded-[28px] bg-white px-6 py-16">
-        <Text className="text-[15px] font-semibold text-[#0F0E41]">No recent activity</Text>
+        <Text className="text-[15px] font-semibold text-[#0F0E41]">
+          No recent activity
+        </Text>
         <Text className="mt-2 text-center text-[13px] text-[#6E6F82]">
           Actions, alerts, and automation updates will appear here.
         </Text>
@@ -297,7 +390,9 @@ function LogSection({ logs }: { logs: OutletLogEntry[] }) {
             <Text className="mt-1 text-[15px] font-semibold text-[#0F0E41]">
               {log.action}
             </Text>
-            <Text className="mt-1 text-[13px] text-[#6E6F82]">{log.detail}</Text>
+            <Text className="mt-1 text-[13px] text-[#6E6F82]">
+              {log.detail}
+            </Text>
           </View>
         </View>
       ))}
@@ -340,10 +435,3 @@ function formatLogTimestamp(timestamp: string) {
 
   return `${dateFormatter.format(date)} ${timeFormatter.format(date)}`;
 }
-
-
-
-
-
-
-

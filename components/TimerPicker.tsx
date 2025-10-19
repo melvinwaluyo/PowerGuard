@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -36,8 +36,14 @@ function buildData(values: number[]): WheelItem[] {
   return [...spacers, ...values, ...spacers];
 }
 
-function PickerColumn({ label, values, selectedValue, onValueChange }: PickerColumnProps) {
+function PickerColumn({
+  label,
+  values,
+  selectedValue,
+  onValueChange,
+}: PickerColumnProps) {
   const listRef = useRef<ScrollView | null>(null);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const data = useMemo(() => buildData(values), [values]);
 
   const safeSelected = useMemo(() => {
@@ -47,30 +53,45 @@ function PickerColumn({ label, values, selectedValue, onValueChange }: PickerCol
     return values[0] ?? 0;
   }, [selectedValue, values]);
 
+  const selectedIndex = useMemo(
+    () => values.indexOf(safeSelected),
+    [safeSelected, values]
+  );
+
+  const centerVisibleRow = useMemo(() => Math.floor(VISIBLE_ITEMS / 2), []);
+
   useEffect(() => {
     const index = values.indexOf(safeSelected);
     if (index < 0) {
       return;
     }
 
-    const offset = (index + SPACER_COUNT) * ITEM_HEIGHT;
+    // Position the selected item in the middle visible row
+    const dataIndex = index + SPACER_COUNT;
+    const offset = (dataIndex - centerVisibleRow) * ITEM_HEIGHT;
+    setScrollOffset(offset);
     requestAnimationFrame(() => {
       listRef.current?.scrollTo({ y: offset, animated: false });
     });
-  }, [safeSelected, values]);
+  }, [safeSelected, values, centerVisibleRow]);
 
   const alignToNearest = useCallback(
     (offset: number) => {
-      const rawIndex = Math.round(offset / ITEM_HEIGHT);
+      // Calculate which data item is in the middle visible row
+      const middleDataIndex = Math.round(offset / ITEM_HEIGHT) + centerVisibleRow;
+      // Convert data index to value index (accounting for spacers)
       const valueIndex = Math.min(
-        Math.max(rawIndex - SPACER_COUNT, 0),
+        Math.max(middleDataIndex - SPACER_COUNT, 0),
         values.length - 1
       );
       const nextValue = values[valueIndex];
 
+      // Position this value in the middle row
+      const targetOffset = (valueIndex + SPACER_COUNT - centerVisibleRow) * ITEM_HEIGHT;
+      setScrollOffset(targetOffset);
       requestAnimationFrame(() => {
         listRef.current?.scrollTo({
-          y: (valueIndex + SPACER_COUNT) * ITEM_HEIGHT,
+          y: targetOffset,
           animated: true,
         });
       });
@@ -79,7 +100,7 @@ function PickerColumn({ label, values, selectedValue, onValueChange }: PickerCol
         onValueChange(nextValue);
       }
     },
-    [onValueChange, safeSelected, values]
+    [onValueChange, safeSelected, values, centerVisibleRow]
   );
 
   const handleMomentumEnd = useCallback(
@@ -91,11 +112,21 @@ function PickerColumn({ label, values, selectedValue, onValueChange }: PickerCol
 
   const handleScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (!event.nativeEvent.velocity || Math.abs(event.nativeEvent.velocity.y) < 0.01) {
+      if (
+        !event.nativeEvent.velocity ||
+        Math.abs(event.nativeEvent.velocity.y) < 0.01
+      ) {
         alignToNearest(event.nativeEvent.contentOffset.y);
       }
     },
     [alignToNearest]
+  );
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      setScrollOffset(event.nativeEvent.contentOffset.y);
+    },
+    []
   );
 
   return (
@@ -111,29 +142,39 @@ function PickerColumn({ label, values, selectedValue, onValueChange }: PickerCol
           decelerationRate="fast"
           onMomentumScrollEnd={handleMomentumEnd}
           onScrollEndDrag={handleScrollEndDrag}
+          onScroll={handleScroll}
           bounces={false}
           overScrollMode="never"
           scrollEventThrottle={16}
         >
-          {data.map((item, index) => (
-            <View
-              key={item === null ? `spacer-${index}` : `value-${item}`}
-              style={{ height: ITEM_HEIGHT }}
-              className="items-center justify-center"
-            >
-              {item === null ? (
-                <View />
-              ) : (
-                <Text
-                  className={`text-[20px] font-semibold ${
-                    item === safeSelected ? "text-[#0F0E41]" : "text-[#9AA0B8]"
-                  }`}
-                >
-                  {formatNumber(item)}
-                </Text>
-              )}
-            </View>
-          ))}
+          {data.map((item, index) => {
+            const itemPosition = index * ITEM_HEIGHT;
+            const visiblePosition = (itemPosition - scrollOffset) / ITEM_HEIGHT;
+            const isCenter = Math.abs(visiblePosition - centerVisibleRow) < 0.5;
+
+            return (
+              <View
+                key={item === null ? `spacer-${index}` : `value-${item}`}
+                style={{ height: ITEM_HEIGHT }}
+                className="items-center justify-center"
+              >
+                {item === null ? (
+                  <View />
+                ) : (
+                  <Text
+                    className={`text-[20px] ${
+                      isCenter
+                        ? "font-bold text-[#0F0E41]"
+                        : "font-medium text-[#9AA0B8]"
+                    }`}
+                    style={{ opacity: isCenter ? 1 : 0.32 }}
+                  >
+                    {formatNumber(item)}
+                  </Text>
+                )}
+              </View>
+            );
+          })}
         </ScrollView>
         <View
           pointerEvents="none"

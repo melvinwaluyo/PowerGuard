@@ -155,6 +155,9 @@ export function OutletProvider({ children }: { children: ReactNode }) {
         }
 
         const nextIsOn = !outlet.isOn;
+        const nextTimer = outlet.timer
+          ? { ...outlet.timer, isActive: nextIsOn ? outlet.timer.isActive : false }
+          : null;
         const toggleLog: OutletLogEntry = {
           id: createId(),
           timestamp: new Date().toISOString(),
@@ -170,6 +173,7 @@ export function OutletProvider({ children }: { children: ReactNode }) {
           connection: nextIsOn ? "Connected" : "Disconnected",
           powerDraw: nextIsOn ? outlet.power : 0,
           duration: nextIsOn ? outlet.runtime : null,
+          timer: nextTimer,
           logs: [toggleLog, ...outlet.logs],
         };
       })

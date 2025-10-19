@@ -32,7 +32,7 @@ export default function App() {
           onPressOutlet={handlePressOutlet}
         />
       </View>
-      <BottomNavigation />
+      <BottomNavigation activeTab="home" />
     </View>
   );
 }

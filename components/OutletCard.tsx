@@ -1,4 +1,4 @@
-import { Dimensions, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
 import { Outlet } from "@/types/outlet";
 import ClockIcon from "../assets/images/Clock.svg";
 import FlashIcon from "../assets/images/FlashOn.svg";
@@ -12,7 +12,7 @@ interface OutletCardProps {
 
 const STATUS_STYLES: Record<string, { container: string; text: string }> = {
   Connected: {
-    container: "bg-[#9BF1AE]",
+    container: "bg-[#C9F9D4]",
     text: "text-[#176D38]",
   },
   Disconnected: {
@@ -26,82 +26,83 @@ const STATUS_STYLES: Record<string, { container: string; text: string }> = {
 };
 
 const CARD_SHADOW = {
-  shadowColor: "#0F0E41",
-  shadowOpacity: 0.08,
-  shadowOffset: { width: 0, height: 12 },
-  shadowRadius: 22,
-  elevation: 9,
+  shadowColor: "#000",
+  shadowOpacity: 0.06,
+  shadowOffset: { width: 0, height: 2 },
+  shadowRadius: 8,
+  elevation: 3,
 };
 
 export function OutletCard({ outlet, onToggle, onPress }: OutletCardProps) {
   const statusStyle = STATUS_STYLES[outlet.status] ?? STATUS_STYLES.default;
-  const windowWidth = Dimensions.get("window").width;
-  const iconSize = Math.round(Math.max(50, Math.min(62, windowWidth * 0.14)));
 
   return (
     <View
-      className="bg-white border border-[#EAECF5] rounded-[28px] mx-5 mb-6 px-6 py-5"
+      className="bg-white rounded-[20px] mx-4 mb-3 px-4 py-4"
       style={CARD_SHADOW}
     >
-      <View className="flex-row items-center">
-        <TouchableOpacity
-          activeOpacity={onPress ? 0.85 : 1}
-          disabled={!onPress}
-          onPress={() => onPress?.(outlet)}
-          className="flex-1 pr-3"
-        >
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-[20px] font-semibold text-[#4C4C66]">
-              {outlet.name}
+      <TouchableOpacity
+        activeOpacity={onPress ? 0.7 : 1}
+        disabled={!onPress}
+        onPress={() => onPress?.(outlet)}
+      >
+        {/* Header */}
+        <View className="flex-row items-center justify-between mb-3">
+          <Text className="text-[17px] font-semibold text-[#0F0E41]">
+            {outlet.name}
+          </Text>
+          <View className={`px-2.5 py-1 rounded-full ${statusStyle.container}`}>
+            <Text className={`text-[10px] font-semibold ${statusStyle.text}`}>
+              {outlet.status}
             </Text>
-            <View className={`px-3 py-1 rounded-full ${statusStyle.container}`}>
-              <Text className={`text-[11px] font-semibold ${statusStyle.text}`}>
-                {outlet.status}
-              </Text>
-            </View>
           </View>
+        </View>
 
-          <View className="flex-row items-center">
-            <View className="mr-6">
-              <SocketIcon width={iconSize} height={iconSize} color="#0F0E41" />
+        {/* Main Content */}
+        <View className="flex-row items-center justify-between">
+          {/* Left side - Icon and Info */}
+          <View className="flex-row items-center flex-1">
+            <View className="mr-4">
+              <SocketIcon width={44} height={44} color="#0F0E41" />
             </View>
 
             <View className="flex-1">
-              <View className="flex-row items-center mb-2.5">
-                <FlashIcon width={18} height={18} color="#0F0E41" />
-                <Text className="ml-2 text-[15px] font-semibold text-[#0F0E41]">
+              <View className="flex-row items-center mb-1.5">
+                <FlashIcon width={14} height={14} color="#0F0E41" />
+                <Text className="ml-1.5 text-[14px] font-semibold text-[#0F0E41]">
                   {`${outlet.powerDraw} W`}
                 </Text>
               </View>
 
               <View className="flex-row items-center">
-                <ClockIcon width={17} height={17} color="#55596A" />
-                <Text className="ml-2 text-[13px] font-medium text-[#6E6F82]">
+                <ClockIcon width={13} height={13} color="#6B7280" />
+                <Text className="ml-1.5 text-[12px] font-medium text-[#6B7280]">
                   {outlet.duration ?? "-"}
                 </Text>
               </View>
             </View>
           </View>
-        </TouchableOpacity>
 
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={() => onToggle?.(outlet.id)}
-          className={`rounded-full p-1 justify-center ${
-            outlet.isOn ? "bg-[#0F0E41]" : "bg-[#E2E5EE]"
-          }`}
-          style={{ width: 64, height: 36 }}
-        >
-          <View
-            className="rounded-full bg-white"
-            style={{
-              width: 28,
-              height: 28,
-              alignSelf: outlet.isOn ? "flex-end" : "flex-start",
-            }}
-          />
-        </TouchableOpacity>
-      </View>
+          {/* Right side - Toggle */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => onToggle?.(outlet.id)}
+            className={`rounded-full p-0.5 ${
+              outlet.isOn ? "bg-[#0F0E41]" : "bg-[#CBD2E9]"
+            }`}
+            style={{ width: 52, height: 28 }}
+          >
+            <View
+              className="rounded-full bg-white"
+              style={{
+                width: 24,
+                height: 24,
+                alignSelf: outlet.isOn ? "flex-end" : "flex-start",
+              }}
+            />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
     </View>
   );
 }
