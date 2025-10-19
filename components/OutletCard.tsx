@@ -1,90 +1,104 @@
-import { Image, Text, TouchableOpacity, View } from "react-native";
-
-interface Outlet {
-  id: number;
-  name: string;
-  status: string;
-  power: number;
-  duration: string | null;
-  isOn: boolean;
-}
+import { Dimensions, Text, TouchableOpacity, View } from "react-native";
+import { Outlet } from "@/types/outlet";
+import ClockIcon from "../assets/images/Clock.svg";
+import FlashIcon from "../assets/images/FlashOn.svg";
+import SocketIcon from "../assets/images/Socket.svg";
 
 interface OutletCardProps {
   outlet: Outlet;
   onToggle?: (id: number) => void;
+  onPress?: (outlet: Outlet) => void;
 }
 
-export function OutletCard({ outlet, onToggle }: OutletCardProps) {
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Connected":
-        return "bg-green-500";
-      case "Disconnected":
-        return "bg-red-500";
-      default:
-        return "bg-gray-500";
-    }
-  };
+const STATUS_STYLES: Record<string, { container: string; text: string }> = {
+  Connected: {
+    container: "bg-[#9BF1AE]",
+    text: "text-[#176D38]",
+  },
+  Disconnected: {
+    container: "bg-[#E2E2E2]",
+    text: "text-[#55596A]",
+  },
+  default: {
+    container: "bg-[#D1D5DB]",
+    text: "text-[#1F2937]",
+  },
+};
+
+const CARD_SHADOW = {
+  shadowColor: "#0F0E41",
+  shadowOpacity: 0.08,
+  shadowOffset: { width: 0, height: 12 },
+  shadowRadius: 22,
+  elevation: 9,
+};
+
+export function OutletCard({ outlet, onToggle, onPress }: OutletCardProps) {
+  const statusStyle = STATUS_STYLES[outlet.status] ?? STATUS_STYLES.default;
+  const windowWidth = Dimensions.get("window").width;
+  const iconSize = Math.round(Math.max(50, Math.min(62, windowWidth * 0.14)));
 
   return (
-    <View className="bg-white rounded-xl p-4 mx-4 mb-4 shadow-sm border border-gray-100">
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center flex-1">
-          {/* Outlet Icon */}
-          <View className="bg-gray-100 rounded-lg p-3 mr-4">
-            <Image
-              source={require("../assets/images/Socket.png")}
-              className="w-8 h-10"
-              resizeMode="contain"
-            />
+    <View
+      className="bg-white border border-[#EAECF5] rounded-[28px] mx-5 mb-6 px-6 py-5"
+      style={CARD_SHADOW}
+    >
+      <View className="flex-row items-center">
+        <TouchableOpacity
+          activeOpacity={onPress ? 0.85 : 1}
+          disabled={!onPress}
+          onPress={() => onPress?.(outlet)}
+          className="flex-1 pr-3"
+        >
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-[20px] font-semibold text-[#4C4C66]">
+              {outlet.name}
+            </Text>
+            <View className={`px-3 py-1 rounded-full ${statusStyle.container}`}>
+              <Text className={`text-[11px] font-semibold ${statusStyle.text}`}>
+                {outlet.status}
+              </Text>
+            </View>
           </View>
 
-          <View className="flex-1">
-            <View className="flex-row items-center mb-1">
-              <Text className="text-lg font-semibold text-gray-800 mr-3">
-                {outlet.name}
-              </Text>
-              <View
-                className={`px-2 py-1 rounded-full ${getStatusColor(outlet.status)}`}
-              >
-                <Text className="text-white text-xs font-medium">
-                  {outlet.status}
+          <View className="flex-row items-center">
+            <View className="mr-6">
+              <SocketIcon width={iconSize} height={iconSize} color="#0F0E41" />
+            </View>
+
+            <View className="flex-1">
+              <View className="flex-row items-center mb-2.5">
+                <FlashIcon width={18} height={18} color="#0F0E41" />
+                <Text className="ml-2 text-[15px] font-semibold text-[#0F0E41]">
+                  {`${outlet.powerDraw} W`}
+                </Text>
+              </View>
+
+              <View className="flex-row items-center">
+                <ClockIcon width={17} height={17} color="#55596A" />
+                <Text className="ml-2 text-[13px] font-medium text-[#6E6F82]">
+                  {outlet.duration ?? "-"}
                 </Text>
               </View>
             </View>
-
-            <View className="flex-row items-center">
-              <Image
-                source={require("../assets/images/FlashOn.png")}
-                className="w-4 h-4 mr-1"
-                resizeMode="contain"
-              />
-              <Text className="text-gray-600 mr-4">{outlet.power} W</Text>
-              <Image
-                source={require("../assets/images/Clock.png")}
-                className="w-4 h-4 mr-1"
-                resizeMode="contain"
-              />
-              {outlet.duration ? (
-                <Text className="text-gray-600">{outlet.duration}</Text>
-              ) : (
-                <Text className="text-gray-600">-</Text>
-              )}
-            </View>
           </View>
-        </View>
+        </TouchableOpacity>
 
-        {/* Toggle Switch */}
         <TouchableOpacity
+          activeOpacity={0.85}
           onPress={() => onToggle?.(outlet.id)}
-          className={`w-12 h-6 rounded-full p-1 ${
-            outlet.isOn ? "bg-[#0F0E41]" : "bg-gray-300"
+          className={`rounded-full p-1 justify-center ${
+            outlet.isOn ? "bg-[#0F0E41]" : "bg-[#E2E5EE]"
           }`}
+          style={{ width: 64, height: 36 }}
         >
           <View
-            className={`w-4 h-4 rounded-full bg-white transform transition-transform ${
-              outlet.isOn ? "translate-x-6" : "translate-x-0"
-            }`}
+            className="rounded-full bg-white"
+            style={{
+              width: 28,
+              height: 28,
+              alignSelf: outlet.isOn ? "flex-end" : "flex-start",
+            }}
           />
         </TouchableOpacity>
       </View>
