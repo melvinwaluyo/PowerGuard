@@ -81,8 +81,20 @@ export function MobileMap() {
   };
 
   const handleMapPress = () => {
-    // Navigate to manual pin location screen
-    router.push("/pin-location");
+    // Navigate to manual pin location screen with current location
+    if (location) {
+      router.push({
+        pathname: "/pin-location",
+        params: {
+          latitude: location.latitude.toString(),
+          longitude: location.longitude.toString(),
+          address: location.address,
+          city: location.city,
+        },
+      });
+    } else {
+      router.push("/pin-location");
+    }
   };
 
   if (!location) {

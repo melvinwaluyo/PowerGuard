@@ -1,6 +1,6 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Platform, StatusBar, Text, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { WebView } from "react-native-webview";
@@ -9,14 +9,18 @@ const BASE_TOP_PADDING = 16;
 
 export default function PinLocationScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const webViewRef = useRef<WebView>(null);
+
+  // Initialize with params if available, otherwise null (will auto-fetch)
   const [selectedLocation, setSelectedLocation] = useState({
-    latitude: 40.7128,
-    longitude: -74.006,
-    address: "",
-    city: "",
+    latitude: params.latitude ? parseFloat(params.latitude as string) : 0,
+    longitude: params.longitude ? parseFloat(params.longitude as string) : 0,
+    address: (params.address as string) || "",
+    city: (params.city as string) || "",
   });
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(!!params.latitude);
 
   const topInset =
     (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0) +
@@ -84,6 +88,7 @@ export default function PinLocationScreen() {
         accuracy: Location.Accuracy.Balanced,
       });
       handleLocationChange(position.coords.latitude, position.coords.longitude);
+      setIsInitialized(true);
 
       // Update map position on mobile via WebView
       if (Platform.OS !== "web" && webViewRef.current) {
@@ -102,6 +107,13 @@ export default function PinLocationScreen() {
       }
     }
   };
+
+  // Auto-fetch current location on mount if no params provided
+  useEffect(() => {
+    if (!isInitialized) {
+      handleMyLocation();
+    }
+  }, []);
 
   if (Platform.OS === "web") {
     // Web: Use react-leaflet for interactive map
