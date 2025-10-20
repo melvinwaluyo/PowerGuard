@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   ScrollView,
   Text,
   View,
@@ -134,6 +135,7 @@ function PickerColumn({
       <View
         className="overflow-hidden rounded-[20px] bg-[#EDEFF8]"
         style={{ height: ITEM_HEIGHT * VISIBLE_ITEMS, width: 82 }}
+        collapsable={false}
       >
         <ScrollView
           ref={listRef}
@@ -146,6 +148,9 @@ function PickerColumn({
           bounces={false}
           overScrollMode="never"
           scrollEventThrottle={16}
+          nestedScrollEnabled={true}
+          removeClippedSubviews={false}
+          persistentScrollbar={Platform.OS === 'android'}
         >
           {data.map((item, index) => {
             const itemPosition = index * ITEM_HEIGHT;

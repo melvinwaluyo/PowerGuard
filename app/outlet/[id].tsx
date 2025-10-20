@@ -5,7 +5,7 @@ import { ScrollView, Switch, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomNavigation } from "@/components/BottomNavigation";
-import { TimerPicker } from "@/components/TimerPicker";
+import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { useOutlets } from "@/context/OutletContext";
 import {
   Outlet,
@@ -208,6 +208,19 @@ function StatusSection({
   onToggleTimer: () => void;
   isTimerEnabled: boolean;
 }) {
+  const [modalVisible, setModalVisible] = useState(false);
+  const [draftTimer, setDraftTimer] = useState<OutletTimerSetting>(timer);
+
+  const handleEditTimer = () => {
+    setDraftTimer({ ...timer });
+    setModalVisible(true);
+  };
+
+  const handleConfirmTimer = (value: OutletTimerSetting) => {
+    onTimerChange(value);
+    setModalVisible(false);
+  };
+
   const connectionStyles =
     outlet.connection === "Connected"
       ? { background: "#C9F9D4", text: "#176D38" }
@@ -326,26 +339,49 @@ function StatusSection({
             </TouchableOpacity>
           </View>
         ) : (
-          <View className="rounded-[24px] bg-[#F3F4FA] px-4 py-5">
-            <View
-              pointerEvents={isTimerEnabled ? "auto" : "none"}
-              className={isTimerEnabled ? undefined : "opacity-40"}
-            >
-              <TimerPicker value={timer} onChange={onTimerChange} />
+          <View className="rounded-[24px] bg-[#F3F4FA] px-6 py-6">
+            <View className="items-center mb-5">
+              <Text className={`text-[48px] font-bold tracking-wider ${
+                isTimerEnabled ? "text-[#0F0E41]" : "text-[#9AA0B8]"
+              }`}>
+                {String(timer.hours).padStart(2, "0")}:
+                {String(timer.minutes).padStart(2, "0")}:
+                {String(timer.seconds).padStart(2, "0")}
+              </Text>
+              <Text className="text-[13px] text-[#6E6F82] mt-2">
+                Timer Duration
+              </Text>
             </View>
 
-            <TouchableOpacity
-              className={`mt-6 self-center rounded-full px-8 py-3 ${
-                isTimerEnabled ? "bg-[#0F0E41]" : "bg-[#9AA0B8]"
-              }`}
-              onPress={onToggleTimer}
-              activeOpacity={isTimerEnabled ? 0.9 : 1}
-              disabled={!isTimerEnabled}
-            >
-              <Text className="text-[14px] font-semibold text-white">
-                Start Timer
-              </Text>
-            </TouchableOpacity>
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                className={`flex-1 rounded-full px-6 py-3.5 border ${
+                  isTimerEnabled ? "bg-white border-[#0F0E41]" : "bg-[#CBD2E9] border-[#CBD2E9]"
+                }`}
+                onPress={handleEditTimer}
+                activeOpacity={isTimerEnabled ? 0.9 : 1}
+                disabled={!isTimerEnabled}
+              >
+                <Text className={`text-[14px] font-semibold text-center ${
+                  isTimerEnabled ? "text-[#0F0E41]" : "text-white"
+                }`}>
+                  Edit Timer
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className={`flex-1 rounded-full px-6 py-3.5 ${
+                  isTimerEnabled ? "bg-[#0F0E41]" : "bg-[#9AA0B8]"
+                }`}
+                onPress={onToggleTimer}
+                activeOpacity={isTimerEnabled ? 0.9 : 1}
+                disabled={!isTimerEnabled}
+              >
+                <Text className="text-[14px] font-semibold text-white text-center">
+                  Start Timer
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {!isTimerEnabled ? (
               <Text className="mt-4 text-center text-[12px] text-[#6E6F82]">
@@ -355,6 +391,14 @@ function StatusSection({
           </View>
         )}
       </View>
+
+      {/* Timer Picker Modal */}
+      <TimerPickerModal
+        visible={modalVisible}
+        value={draftTimer}
+        onConfirm={handleConfirmTimer}
+        onCancel={() => setModalVisible(false)}
+      />
     </View>
   );
 }

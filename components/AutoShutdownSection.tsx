@@ -1,4 +1,4 @@
-import { TimerPicker } from "@/components/TimerPicker";
+import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { OutletTimerSetting } from "@/types/outlet";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
@@ -17,42 +17,41 @@ export default function AutoShutdownSection() {
     seconds: 0,
     isActive: false,
   });
-  const [isEditing, setIsEditing] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
 
-  const handleSet = () => {
-    setCurrentTimer(draftTimer);
-    setIsEditing(false);
+  const handleConfirm = (value: OutletTimerSetting) => {
+    setCurrentTimer(value);
+    setModalVisible(false);
   };
 
   const handleEdit = () => {
-    setDraftTimer(currentTimer);
-    setIsEditing(true);
+    setDraftTimer({ ...currentTimer });
+    setModalVisible(true);
   };
 
   const handleCancel = () => {
-    setDraftTimer(currentTimer);
-    setIsEditing(false);
+    setModalVisible(false);
   };
 
   return (
-    <View
-      className="bg-white rounded-2xl p-5 mb-4 w-full max-w-[400px]"
-      style={{
-        elevation: 4,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      }}
-    >
-      <Text className="text-lg font-semibold text-[#0F0E41] mb-1">
-        Auto Shutdown Timer
-      </Text>
-      <Text className="text-sm text-[#6B7280] mb-5">
-        Time until auto-off after geofence alert
-      </Text>
+    <>
+      <View
+        className="bg-white rounded-2xl p-5 mb-4 w-full max-w-[400px]"
+        style={{
+          elevation: 4,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+        }}
+      >
+        <Text className="text-lg font-semibold text-[#0F0E41] mb-1">
+          Auto Shutdown Timer
+        </Text>
+        <Text className="text-sm text-[#6B7280] mb-5">
+          Time until auto-off after geofence alert
+        </Text>
 
-      {!isEditing && (
         <View className="items-center">
           {/* Timer Display Card */}
           <View className="bg-[#E8EBFF] rounded-2xl p-6 w-full items-center mb-4">
@@ -94,34 +93,15 @@ export default function AutoShutdownSection() {
             </Text>
           </TouchableOpacity>
         </View>
-      )}
+      </View>
 
-      {isEditing && (
-        <>
-          <View className="rounded-[24px] bg-[#F3F4FA] px-4 py-5 mb-4">
-            <TimerPicker value={draftTimer} onChange={setDraftTimer} />
-          </View>
-
-          <View className="flex-row justify-between gap-3">
-            <TouchableOpacity
-              className="flex-1 bg-[#F3F4F6] rounded-lg p-2.5 items-center border border-[#D1D5DB]"
-              onPress={handleCancel}
-            >
-              <Text className="text-[#374151] font-semibold text-sm">
-                Cancel
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="flex-1 bg-[#0F0E41] rounded-lg p-2.5 items-center"
-              onPress={handleSet}
-            >
-              <Text className="text-white font-semibold text-sm">
-                Set Timer
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
-    </View>
+      {/* Timer Picker Modal */}
+      <TimerPickerModal
+        visible={modalVisible}
+        value={draftTimer}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
+    </>
   );
 }
