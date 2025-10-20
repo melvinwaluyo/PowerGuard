@@ -2,9 +2,39 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { OutletProvider } from "@/context/OutletContext";
+import * as Updates from "expo-updates";
+import { useEffect } from "react";
+import { Alert, Platform } from "react-native";
 import "../global.css";
 
 export default function RootLayout() {
+  useEffect(() => {
+    async function checkForUpdates() {
+      if (__DEV__) {
+        // Skip update checks in development mode
+        return;
+      }
+
+      try {
+        const update = await Updates.checkForUpdateAsync();
+
+        if (update.isAvailable) {
+          console.log("Update available, downloading...");
+          await Updates.fetchUpdateAsync();
+
+          // Reload the app to apply the update
+          await Updates.reloadAsync();
+        } else {
+          console.log("App is up to date");
+        }
+      } catch (error) {
+        console.error("Error checking for updates:", error);
+      }
+    }
+
+    checkForUpdates();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <OutletProvider>
