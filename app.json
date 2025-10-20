@@ -9,11 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/icons/splash-icon-light.png",
+      "image": "./assets/icons/splash-icon-dark.png",
       "resizeMode": "cover",
       "backgroundColor": "#FFFFFF",
       "dark": {
-        "image": "./assets/icons/splash-icon-dark.png",
+        "image": "./assets/icons/splash-icon-light.png",
         "resizeMode": "cover",
         "backgroundColor": "#000000"
       }
@@ -37,11 +37,11 @@
         "foregroundImage": "./assets/icons/adaptive-icon.png"
       },
       "splash": {
-        "image": "./assets/icons/splash-icon-light.png",
+        "image": "./assets/icons/splash-icon-dark.png",
         "resizeMode": "cover",
         "backgroundColor": "#FFFFFF",
         "dark": {
-          "image": "./assets/icons/splash-icon-dark.png",
+          "image": "./assets/icons/splash-icon-light.png",
           "resizeMode": "cover",
           "backgroundColor": "#000000"
         }
