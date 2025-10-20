@@ -4,16 +4,16 @@
     "slug": "PowerGuard",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icons/adaptive-icon.png",
     "scheme": "powerguard",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/icons/splash-icon-light.png",
       "resizeMode": "cover",
       "backgroundColor": "#FFFFFF",
       "dark": {
-        "image": "./assets/images/splash-icon-dark.png",
+        "image": "./assets/icons/splash-icon-dark.png",
         "resizeMode": "cover",
         "backgroundColor": "#000000"
       }
@@ -21,6 +21,11 @@
     "ios": {
       "bundleIdentifier": "com.mlvwly.PowerGuard",
       "supportsTablet": true,
+      "icon": {
+        "light": "./assets/icons/Light.png",
+        "dark": "./assets/icons/Dark.png",
+        "tinted": "./assets/icons/Tinted.png"
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "PowerGuard needs your location to set your home address for geofencing features.",
         "ITSAppUsesNonExemptEncryption": false
@@ -29,14 +34,14 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/images/icon.png"
+        "foregroundImage": "./assets/icons/adaptive-icon.png"
       },
       "splash": {
-        "image": "./assets/images/splash-icon.png",
+        "image": "./assets/icons/splash-icon-light.png",
         "resizeMode": "cover",
         "backgroundColor": "#FFFFFF",
         "dark": {
-          "image": "./assets/images/splash-icon-dark.png",
+          "image": "./assets/icons/splash-icon-dark.png",
           "resizeMode": "cover",
           "backgroundColor": "#000000"
         }
@@ -54,7 +59,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/icons/adaptive-icon.png"
     },
     "plugins": [
       "expo-router",
@@ -67,11 +72,11 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/icons/splash-icon-light.png",
           "resizeMode": "cover",
           "backgroundColor": "#FFFFFF",
           "dark": {
-            "image": "./assets/images/splash-icon-dark.png",
+            "image": "./assets/icons/splash-icon-dark.png",
             "resizeMode": "cover",
             "backgroundColor": "#000000"
           }
