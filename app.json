@@ -21,11 +21,6 @@
     "ios": {
       "bundleIdentifier": "com.mlvwly.PowerGuard",
       "supportsTablet": true,
-      "icon": {
-        "light": "./assets/icons/Light.png",
-        "dark": "./assets/icons/Dark.png",
-        "tinted": "./assets/icons/Tinted.png"
-      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "PowerGuard needs your location to set your home address for geofencing features.",
         "ITSAppUsesNonExemptEncryption": false
@@ -93,6 +88,12 @@
         "projectId": "b0fe4763-46db-427e-92f5-a4b73c69fc59"
       }
     },
-    "owner": "mlvwly"
+    "owner": "mlvwly",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b0fe4763-46db-427e-92f5-a4b73c69fc59"
+    }
   }
 }
