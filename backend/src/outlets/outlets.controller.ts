@@ -6,6 +6,7 @@ import {
   Body,
   ParseIntPipe,
   Query,
+  Delete,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiBody, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { OutletsService } from './outlets.service';
@@ -97,5 +98,24 @@ export class OutletsController {
     @Body('name') name: string,
   ) {
     return this.outletsService.updateName(id, name);
+  }
+
+  @Delete('usage-logs/clear')
+  @ApiOperation({
+    summary: 'Clear all usage log data (Development/Testing only)',
+    description: '⚠️ WARNING: This will permanently delete ALL usage data from the database and reset the sequence.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'All usage data cleared successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'All usage data cleared successfully' }
+      }
+    }
+  })
+  clearAllUsageData() {
+    return this.outletsService.clearAllUsageData();
   }
 }

@@ -102,8 +102,8 @@ export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarCha
     if (relativeX >= 0 && relativeX <= chartWidth) {
       const index = Math.floor(relativeX / barWidth);
       if (index >= 0 && index < data.length) {
-        // Don't show tooltip for future data or empty labels
-        if (!data[index].isFuture && data[index].label) {
+        // Don't show tooltip for future data, empty labels, or empty data (usage === 0)
+        if (!data[index].isFuture && data[index].label && data[index].usage > 0) {
           setActiveIndex(index);
         } else {
           setActiveIndex(null);

@@ -2,8 +2,8 @@ import { BottomNavigation } from "@/components/BottomNavigation";
 import { MobileBarChart } from "@/components/MobileBarChart";
 import { ReportHeader } from "@/components/ReportHeader";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
-import { Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import React, { useState, useEffect } from "react";
+import { Platform, ScrollView, Text, TouchableOpacity, View, ActivityIndicator, Alert, Animated } from "react-native";
 import {
   Bar,
   BarChart,
@@ -15,52 +15,76 @@ import {
 } from "recharts";
 import "../../global.css";
 import { useOutlets } from "@/context/OutletContext";
+import { api } from "@/services/api";
 
-// Simple seeded random function for consistent dummy data
-const seededRandom = (seed: number): number => {
-  const x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
+// Default powerstrip ID - TODO: Make this dynamic based on user's powerstrip
+const DEFAULT_POWERSTRIP_ID = 1;
+
+const monthFullNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+// Timezone offset for UTC+7 (420 minutes = 7 hours)
+const UTC_PLUS_7_OFFSET = 7 * 60;
+
+// Helper function to convert UTC date to UTC+7
+const toUTCPlus7 = (date: Date): Date => {
+  const utcTime = date.getTime();
+  const utcPlus7Time = utcTime + (UTC_PLUS_7_OFFSET * 60 * 1000);
+  return new Date(utcPlus7Time);
 };
 
-// Generate dynamic chart data based on current date/time
-// This will be replaced with real DB data later (showing average from 4 outlets)
-const generateChartData = () => {
-  const now = new Date();
-  const currentHour = now.getHours();
-  const currentDay = now.getDate();
-  const currentMonth = now.getMonth(); // 0-indexed
-  const monthFullNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// Get current time in UTC+7
+const nowUTCPlus7 = (): Date => {
+  return toUTCPlus7(new Date());
+};
 
-  // Day: Generate data for ALL 24 hours (including future hours as empty)
-  const todayData = [];
+// Transform API data to chart format
+const transformHourlyData = (apiData: any[]) => {
+  const now = nowUTCPlus7();
+  const currentHour = now.getUTCHours();
+
+  // Create map of existing data
+  const dataMap = new Map();
+  apiData.forEach(item => {
+    // Convert to UTC+7 and extract hour
+    const dateUTCPlus7 = toUTCPlus7(new Date(item.hour));
+    const hour = dateUTCPlus7.getUTCHours();
+    dataMap.set(hour, item.total_energy_kwh || 0);
+  });
+
+  // Generate all 24 hours
+  const result = [];
   for (let hour = 0; hour < 24; hour++) {
-    // Calculate next hour for interval
     const nextHour = hour + 1;
-
-    // Create interval label for tooltip (e.g., "10:00 - 11:00")
     const timeLabel = `${hour.toString().padStart(2, '0')}:00 - ${nextHour.toString().padStart(2, '0')}:00`;
-
-    // Generate static dummy usage data only for past hours, 0 for future
-    const usage = hour <= currentHour ? 0.05 + seededRandom(hour + 100) * 0.2 : 0;
-
-    // Show labels at 0, 6, 12, 18, and add 24 at the end
     const showLabel = hour === 0 || hour === 6 || hour === 12 || hour === 18;
-    const labelText = showLabel ? `${hour}:00` : "";
+    const usage = dataMap.get(hour) || 0;
 
-    todayData.push({
-      time: labelText,
+    result.push({
+      time: showLabel ? `${hour}:00` : "",
       usage: parseFloat(usage.toFixed(3)),
-      label: timeLabel, // Interval label for tooltip
-      hourIndex: hour, // Store for future reference
-      isFuture: hour > currentHour, // Mark if this is future data
+      label: timeLabel,
+      hourIndex: hour,
+      isFuture: hour > currentHour,
     });
   }
+  return result;
+};
 
-  // Month: Generate data for ALL days in current month (including future days as empty)
-  const monthData = [];
-  const currentMonthNumber = now.getMonth() + 1; // 1-12
-  const currentMonthName = monthFullNames[currentMonth];
-  const currentYear = now.getFullYear();
+const transformDailyData = (apiData: any[]) => {
+  const now = nowUTCPlus7();
+  const currentDay = now.getUTCDate();
+  const currentMonth = now.getUTCMonth();
+  const currentYear = now.getUTCFullYear();
+  const monthFullName = monthFullNames[currentMonth];
+
+  // Create map of existing data
+  const dataMap = new Map();
+  apiData.forEach(item => {
+    // Convert to UTC+7 and extract day
+    const dateUTCPlus7 = toUTCPlus7(new Date(item.day));
+    const day = dateUTCPlus7.getUTCDate();
+    dataMap.set(day, item.total_energy_kwh || 0);
+  });
 
   // Get total days in current month
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -74,82 +98,54 @@ const generateChartData = () => {
     daysInMonth
   ];
 
+  const result = [];
   for (let day = 1; day <= daysInMonth; day++) {
-    // Generate static dummy usage data only for past days, 0 for future
-    const usage = day <= currentDay ? 3 + seededRandom(day + 200) * 4 : 0;
-
-    // Format as day/month (e.g., "21/10")
-    const dateLabel = `${day}/${currentMonthNumber}`;
-
-    // Format full date (e.g., "10 October 2025")
+    const usage = dataMap.get(day) || 0;
+    const dateLabel = `${day}/${currentMonth + 1}`;
     const dayPadded = day.toString().padStart(2, '0');
-    const fullDate = `${dayPadded} ${currentMonthName} ${currentYear}`;
-
-    // Show label if this day is in our calculated positions
+    const fullDate = `${dayPadded} ${monthFullName} ${currentYear}`;
     const showLabel = labelPositions.includes(day);
 
-    monthData.push({
-      time: showLabel ? dateLabel : "", // day/month format
-      usage: parseFloat(usage.toFixed(1)),
-      label: fullDate, // Full date for tooltip
-      dayIndex: day,
-      isFuture: day > currentDay, // Mark if this is future data
-    });
-  }
-
-  // Year: Generate data for ALL 12 months (including future months as empty)
-  const yearData = [];
-  // Only show labels at months 1, 4, 8, 12 (indices 0, 3, 7, 11)
-  const yearLabelPositions = [0, 3, 7, 11];
-
-  for (let month = 0; month < 12; month++) {
-    // Generate static dummy usage data only for past months, 0 for future
-    const usage = month <= currentMonth ? 100 + seededRandom(month + 300) * 100 : 0;
-
-    // Only show label if this month is in our label positions
-    const showLabel = yearLabelPositions.includes(month);
-
-    yearData.push({
-      time: showLabel ? (month + 1).toString() : "", // Show month number (1-12) only at specific positions
-      usage: parseFloat(usage.toFixed(0)),
-      label: monthFullNames[month], // Full month name for tooltip
-      monthIndex: month,
-      isFuture: month > currentMonth, // Mark if this is future data
-    });
-  }
-
-  // Past 30 Days: Generate data for last 30 days
-  const past30DaysData = [];
-  for (let daysAgo = 29; daysAgo >= 0; daysAgo--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - daysAgo);
-    const dayOfMonth = date.getDate();
-    const monthOfDay = date.getMonth();
-
-    // Generate static dummy usage data (3-7 kWh per day)
-    const usage = 3 + seededRandom(dayOfMonth + monthOfDay * 100 + 400) * 4;
-
-    // Format as day/month (e.g., "21/10")
-    const dateLabel = `${dayOfMonth}/${monthOfDay + 1}`;
-
-    // Format full date (e.g., "10 October 2025")
-    const dayPadded = dayOfMonth.toString().padStart(2, '0');
-    const fullDate = `${dayPadded} ${monthFullNames[monthOfDay]} ${date.getFullYear()}`;
-
-    past30DaysData.push({
-      time: dateLabel,
+    result.push({
+      time: showLabel ? dateLabel : "",
       usage: parseFloat(usage.toFixed(1)),
       label: fullDate,
-      dayIndex: daysAgo,
+      dayIndex: day,
+      isFuture: day > currentDay,
     });
   }
+  return result;
+};
 
-  return {
-    Day: todayData,
-    Month: monthData,
-    Year: yearData,
-    Past30Days: past30DaysData,
-  };
+const transformMonthlyData = (apiData: any[]) => {
+  const now = nowUTCPlus7();
+  const currentMonth = now.getUTCMonth();
+
+  // Create map of existing data
+  const dataMap = new Map();
+  apiData.forEach(item => {
+    // Convert to UTC+7 and extract month
+    const dateUTCPlus7 = toUTCPlus7(new Date(item.month));
+    const month = dateUTCPlus7.getUTCMonth();
+    dataMap.set(month, item.total_energy_kwh || 0);
+  });
+
+  const yearLabelPositions = [0, 3, 7, 11];
+  const result = [];
+
+  for (let month = 0; month < 12; month++) {
+    const usage = dataMap.get(month) || 0;
+    const showLabel = yearLabelPositions.includes(month);
+
+    result.push({
+      time: showLabel ? (month + 1).toString() : "",
+      usage: parseFloat(usage.toFixed(0)),
+      label: monthFullNames[month],
+      monthIndex: month,
+      isFuture: month > currentMonth,
+    });
+  }
+  return result;
 };
 
 // Calculate max value with minimal padding for better visualization
@@ -180,21 +176,134 @@ const periods = ["Day", "Month", "Year"] as const;
 
 const PowerUsageChart: React.FC = () => {
   const [period, setPeriod] = useState<"Day" | "Month" | "Year">("Day");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hourlyData, setHourlyData] = useState<any[]>([]);
+  const [dailyData, setDailyData] = useState<any[]>([]);
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [todayTotal, setTodayTotal] = useState(0);
+  const [past30DaysTotal, setPast30DaysTotal] = useState(0);
   const { outlets } = useOutlets();
+
+  // Animation for refresh button
+  const rotateAnim = React.useRef(new Animated.Value(0)).current;
+
+  // Rotate animation when refreshing
+  React.useEffect(() => {
+    if (isRefreshing) {
+      Animated.loop(
+        Animated.timing(rotateAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      rotateAnim.setValue(0);
+    }
+  }, [isRefreshing]);
+
+  const spin = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   // Calculate total current power draw from all outlets
   const totalPowerDraw = React.useMemo(() => {
     return outlets.reduce((sum, outlet) => sum + outlet.powerDraw, 0);
   }, [outlets]);
 
-  // Generate data dynamically based on current date/time
-  const chartData = React.useMemo(() => generateChartData(), []);
-  const data = chartData[period];
+  // Fetch data from API
+  const fetchData = async (isManualRefresh = false) => {
+    if (isManualRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+
+    try {
+      const now = nowUTCPlus7();
+      const currentYear = now.getUTCFullYear();
+      const currentMonth = now.getUTCMonth() + 1; // 1-12
+
+      // Fetch all data in parallel
+      const [hourly, daily, monthly, today, past30] = await Promise.all([
+        api.getHourlyUsage(DEFAULT_POWERSTRIP_ID),
+        api.getDailyUsage(DEFAULT_POWERSTRIP_ID, currentYear, currentMonth),
+        api.getMonthlyUsage(DEFAULT_POWERSTRIP_ID, currentYear),
+        api.getTodayUsage(DEFAULT_POWERSTRIP_ID),
+        api.getPast30DaysUsage(DEFAULT_POWERSTRIP_ID),
+      ]);
+
+      // Transform data
+      setHourlyData(transformHourlyData(hourly));
+      setDailyData(transformDailyData(daily));
+      setMonthlyData(transformMonthlyData(monthly));
+
+      // Set totals
+      setTodayTotal(typeof today === 'number' ? today : 0);
+      setPast30DaysTotal(past30.reduce((sum: number, item: any) => sum + (item.total_energy_kwh || 0), 0));
+    } catch (error) {
+      console.error('Error fetching usage data:', error);
+      // Set empty data on error
+      setHourlyData([]);
+      setDailyData([]);
+      setMonthlyData([]);
+      setTodayTotal(0);
+      setPast30DaysTotal(0);
+    } finally {
+      if (isManualRefresh) {
+        setIsRefreshing(false);
+      } else {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Fetch data on mount only
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Select current period data
+  const data = period === "Day" ? hourlyData : period === "Month" ? dailyData : monthlyData;
   const maxValue = React.useMemo(() => calculateMaxValue(data), [data]);
+
+  // Generate unique key for chart to force re-render when data changes
+  const chartKey = React.useMemo(() => {
+    const dataSum = data.reduce((sum, item) => sum + item.usage, 0);
+    return `${period}-${data.length}-${dataSum.toFixed(3)}`;
+  }, [data, period]);
 
   const handleExpand = () => {
     // TODO: Implement expand functionality
     console.log("Expand chart");
+  };
+
+  const handleClearData = () => {
+    Alert.alert(
+      "Clear All Usage Data",
+      "⚠️ This will permanently delete ALL usage data. Are you sure?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Clear Data",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await api.clearAllUsageData();
+              Alert.alert("Success", "All usage data has been cleared. MQTT simulator will generate new data.");
+            } catch (error) {
+              Alert.alert("Error", "Failed to clear usage data. Please try again.");
+              console.error("Error clearing data:", error);
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Calculate total usage for current period
@@ -204,14 +313,14 @@ const PowerUsageChart: React.FC = () => {
     return total;
   };
 
-  // Calculate totals for all periods for stat cards
-  const todayTotal = React.useMemo(() => {
-    return chartData.Day.reduce((sum, item) => sum + item.usage, 0);
-  }, [chartData.Day]);
-
-  const past30DaysTotal = React.useMemo(() => {
-    return chartData.Past30Days.reduce((sum, item) => sum + item.usage, 0);
-  }, [chartData.Past30Days]);
+  if (isLoading) {
+    return (
+      <View className="flex-1 bg-[#E7E7E7] items-center justify-center">
+        <ActivityIndicator size="large" color="#0F0E41" />
+        <Text className="text-[#6B7280] mt-4">Loading usage data...</Text>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-[#E7E7E7]">
@@ -246,6 +355,24 @@ const PowerUsageChart: React.FC = () => {
           ))}
         </View>
 
+        {/* Clear Data Button (Development) */}
+        <TouchableOpacity
+          onPress={handleClearData}
+          className="flex-row items-center justify-center bg-red-100 rounded-xl px-4 py-2 mb-4"
+          style={{
+            shadowColor: "#000",
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 },
+            elevation: 2,
+          }}
+        >
+          <Ionicons name="trash-outline" size={16} color="#DC2626" />
+          <Text className="text-red-600 text-xs font-semibold ml-2">
+            Clear All Usage Data
+          </Text>
+        </TouchableOpacity>
+
         {/* Chart Card */}
         <View
           className="w-full max-w-[600px] bg-white rounded-[20px] mb-4"
@@ -263,12 +390,27 @@ const PowerUsageChart: React.FC = () => {
               <Text className="text-[#374151] text-lg font-semibold">
                 Energy Consumption
               </Text>
-              <TouchableOpacity
-                onPress={handleExpand}
-                className="w-8 h-8 items-center justify-center rounded-full bg-[#F3F4F6]"
-              >
-                <Ionicons name="expand-outline" size={18} color="#0F0E41" />
-              </TouchableOpacity>
+              <View className="flex-row items-center gap-2">
+                <TouchableOpacity
+                  onPress={() => fetchData(true)}
+                  className="w-8 h-8 items-center justify-center rounded-full bg-[#F3F4F6]"
+                  disabled={isRefreshing}
+                >
+                  <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                    <Ionicons
+                      name="refresh-outline"
+                      size={18}
+                      color={isRefreshing ? "#9CA3AF" : "#0F0E41"}
+                    />
+                  </Animated.View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleExpand}
+                  className="w-8 h-8 items-center justify-center rounded-full bg-[#F3F4F6]"
+                >
+                  <Ionicons name="expand-outline" size={18} color="#0F0E41" />
+                </TouchableOpacity>
+              </View>
             </View>
             <View className="flex-row items-baseline">
               <Text className="text-[#0F0E41] text-3xl font-bold">
@@ -280,21 +422,23 @@ const PowerUsageChart: React.FC = () => {
             </View>
             <Text className="text-[#6B7280] text-sm mt-1">
               {(() => {
-                const now = new Date();
+                const now = nowUTCPlus7();
                 switch (period) {
                   case "Day":
                     return now.toLocaleDateString("en-US", {
                       month: "long",
                       day: "numeric",
-                      year: "numeric"
+                      year: "numeric",
+                      timeZone: "UTC"
                     });
                   case "Month":
                     return now.toLocaleDateString("en-US", {
                       month: "long",
-                      year: "numeric"
+                      year: "numeric",
+                      timeZone: "UTC"
                     });
                   case "Year":
-                    return now.getFullYear().toString();
+                    return now.getUTCFullYear().toString();
                   default:
                     return "";
                 }
@@ -303,7 +447,7 @@ const PowerUsageChart: React.FC = () => {
           </View>
 
           {Platform.OS === "web" ? (
-            <View className="w-full h-[260px]">
+            <View key={chartKey} className="w-full h-[260px]">
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={data} barCategoryGap="20%" barGap={2}>
                   <defs>
@@ -324,13 +468,39 @@ const PowerUsageChart: React.FC = () => {
                     tickLine={false}
                     domain={[0, maxValue]}
                   />
-                  <Tooltip />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload[0]) {
+                        const data = payload[0].payload;
+                        // Don't show tooltip for empty data or future data
+                        if (data.usage === 0 || data.isFuture) {
+                          return null;
+                        }
+                        return (
+                          <div style={{
+                            backgroundColor: '#0F0E41',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                          }}>
+                            <p style={{ color: 'white', fontSize: '12px', fontWeight: '600', margin: '0 0 4px 0' }}>
+                              {data.label}
+                            </p>
+                            <p style={{ color: 'white', fontSize: '14px', fontWeight: '700', margin: 0 }}>
+                              {parseFloat(data.usage.toFixed(2))} kWh
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
                   <Bar dataKey="usage" fill="url(#barGradientWeb)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </View>
           ) : (
-            <MobileBarChart data={data} maxValue={maxValue} unit="kWh" />
+            <MobileBarChart key={chartKey} data={data} maxValue={maxValue} unit="kWh" />
           )}
         </View>
 
