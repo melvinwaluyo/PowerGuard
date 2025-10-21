@@ -77,4 +77,25 @@ export class OutletsController {
   getRecentUsage(@Param('id', ParseIntPipe) id: number) {
     return this.outletsService.getRecentUsage(id);
   }
+
+  @Patch(':id/name')
+  @ApiOperation({ summary: 'Update outlet name' })
+  @ApiParam({ name: 'id', type: 'number', description: 'Outlet ID' })
+  @ApiBody({
+    description: 'New outlet name',
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', example: 'Living Room Lamp' },
+      },
+      required: ['name'],
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Outlet name updated successfully' })
+  updateName(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('name') name: string,
+  ) {
+    return this.outletsService.updateName(id, name);
+  }
 }

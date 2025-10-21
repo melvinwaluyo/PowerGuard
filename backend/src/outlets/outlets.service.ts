@@ -7,6 +7,10 @@ export class OutletsService {
 
   async findAll() {
     return this.prisma.outlet.findMany({
+      orderBy: [
+        { index: 'asc' },
+        { outletID: 'asc' },
+      ],
       include: {
         powerStrip: true,
         usageLogs: {
@@ -49,6 +53,13 @@ export class OutletsService {
     return this.prisma.usageLog.findFirst({
       where: { outletID: outletId },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async updateName(id: number, name: string) {
+    return this.prisma.outlet.update({
+      where: { outletID: id },
+      data: { name },
     });
   }
 }
