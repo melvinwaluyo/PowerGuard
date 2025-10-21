@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Alert, Platform, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import * as Location from "expo-location";
@@ -17,9 +17,94 @@ export function MobileMap({ location: propLocation, onLocationChange, radius }: 
     city: string;
   } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const lastFetchedLocation = useRef<{ latitude: number; longitude: number } | null>(null);
 
   // Use prop location, not internal state
   const location = propLocation;
+
+  // Fetch address name when location changes
+  useEffect(() => {
+    if (location) {
+      // Check if this is a new location or if we need to refetch
+      const isNewLocation = !lastFetchedLocation.current ||
+        lastFetchedLocation.current.latitude !== location.latitude ||
+        lastFetchedLocation.current.longitude !== location.longitude;
+
+      if (isNewLocation) {
+        lastFetchedLocation.current = location;
+        fetchAddressForLocation(location.latitude, location.longitude);
+      }
+    } else {
+      // Clear display info when location is null
+      setDisplayInfo(null);
+      lastFetchedLocation.current = null;
+    }
+  }, [location]);
+
+  const fetchAddressForLocation = async (latitude: number, longitude: number) => {
+    try {
+      if (Platform.OS === 'web') {
+        // For web, just show coordinates
+        setDisplayInfo({
+          address: `Lat: ${latitude.toFixed(6)}`,
+          city: `Lng: ${longitude.toFixed(6)}`,
+        });
+      } else {
+        // For native, use reverse geocoding
+        try {
+          const [geocode] = await Location.reverseGeocodeAsync({
+            latitude,
+            longitude,
+          });
+
+          // Build address intelligently based on available data
+          let address = '';
+          let city = '';
+
+          // Try to build street address
+          if (geocode.street) {
+            address = `${geocode.streetNumber || ''} ${geocode.street}`.trim();
+          } else if (geocode.name) {
+            // If no street, use place name
+            address = geocode.name;
+          } else if (geocode.district || geocode.subregion) {
+            // If no street or name, use district/subregion
+            address = geocode.district || geocode.subregion || '';
+          }
+
+          // Build city line
+          const cityParts = [geocode.city, geocode.region, geocode.postalCode].filter(Boolean);
+          city = cityParts.join(', ');
+
+          // If we have no useful address info, fall back to coordinates
+          if (!address && !city) {
+            setDisplayInfo({
+              address: `Lat: ${latitude.toFixed(6)}`,
+              city: `Lng: ${longitude.toFixed(6)}`,
+            });
+          } else {
+            setDisplayInfo({
+              address: address || city || `Lat: ${latitude.toFixed(6)}`,
+              city: address ? city : `Lng: ${longitude.toFixed(6)}`,
+            });
+          }
+        } catch (geocodeError) {
+          // Fallback to coordinates if geocoding fails
+          setDisplayInfo({
+            address: `Lat: ${latitude.toFixed(6)}`,
+            city: `Lng: ${longitude.toFixed(6)}`,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching address:', error);
+      // Fallback to coordinates on error
+      setDisplayInfo({
+        address: `Lat: ${latitude.toFixed(6)}`,
+        city: `Lng: ${longitude.toFixed(6)}`,
+      });
+    }
+  };
 
   const getCurrentLocation = async () => {
     try {
@@ -47,33 +132,8 @@ export function MobileMap({ location: propLocation, onLocationChange, radius }: 
         longitude: position.coords.longitude,
       });
 
-      // Reverse geocode to get address for display (not available on web in SDK 49+)
-      if (Platform.OS === 'web') {
-        // For web, just show coordinates
-        setDisplayInfo({
-          address: `Lat: ${position.coords.latitude.toFixed(6)}`,
-          city: `Lng: ${position.coords.longitude.toFixed(6)}`,
-        });
-      } else {
-        // For native, use reverse geocoding
-        try {
-          const [geocode] = await Location.reverseGeocodeAsync({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-
-          setDisplayInfo({
-            address: `${geocode.streetNumber || ''} ${geocode.street || 'Unknown Street'}`.trim(),
-            city: `${geocode.city || ''}, ${geocode.region || ''}, ${geocode.postalCode || ''}`,
-          });
-        } catch (geocodeError) {
-          // Fallback to coordinates if geocoding fails
-          setDisplayInfo({
-            address: `Lat: ${position.coords.latitude.toFixed(6)}`,
-            city: `Lng: ${position.coords.longitude.toFixed(6)}`,
-          });
-        }
-      }
+      // Fetch address for the new location
+      await fetchAddressForLocation(position.coords.latitude, position.coords.longitude);
 
       setIsLoadingLocation(false);
     } catch (error) {
@@ -227,7 +287,7 @@ export function MobileMap({ location: propLocation, onLocationChange, radius }: 
               <Text className="text-white text-xs">📍</Text>
             </View>
             <Text className="text-white font-semibold text-xs">
-              {isLoadingLocation ? "Updating..." : "Update Location"}
+              {isLoadingLocation ? "Getting Location..." : "Get Current Location"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -346,7 +406,7 @@ export function MobileMap({ location: propLocation, onLocationChange, radius }: 
             <Text className="text-white text-xs">📍</Text>
           </View>
           <Text className="text-white font-semibold text-xs">
-            {isLoadingLocation ? "Updating..." : "Update Location"}
+            {isLoadingLocation ? "Getting Location..." : "Get Current Location"}
           </Text>
         </TouchableOpacity>
       </View>

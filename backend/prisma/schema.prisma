@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -42,6 +41,8 @@ model UsageLog {
   createdAt DateTime? @default(now()) @map("createdat") @db.Timestamp(6)
   outlet    Outlet?   @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([outletID, createdAt])
+  @@index([createdAt])
   @@map("usagelog")
 }
 

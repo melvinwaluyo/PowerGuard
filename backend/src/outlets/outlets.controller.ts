@@ -6,6 +6,7 @@ import {
   Body,
   ParseIntPipe,
   Query,
+  Delete,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiBody, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { OutletsService } from './outlets.service';
@@ -76,5 +77,45 @@ export class OutletsController {
   @ApiResponse({ status: 200, description: 'Returns the latest usage data point' })
   getRecentUsage(@Param('id', ParseIntPipe) id: number) {
     return this.outletsService.getRecentUsage(id);
+  }
+
+  @Patch(':id/name')
+  @ApiOperation({ summary: 'Update outlet name' })
+  @ApiParam({ name: 'id', type: 'number', description: 'Outlet ID' })
+  @ApiBody({
+    description: 'New outlet name',
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', example: 'Living Room Lamp' },
+      },
+      required: ['name'],
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Outlet name updated successfully' })
+  updateName(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('name') name: string,
+  ) {
+    return this.outletsService.updateName(id, name);
+  }
+
+  @Delete('usage-logs/clear')
+  @ApiOperation({
+    summary: 'Clear all usage log data (Development/Testing only)',
+    description: '⚠️ WARNING: This will permanently delete ALL usage data from the database and reset the sequence.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'All usage data cleared successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'All usage data cleared successfully' }
+      }
+    }
+  })
+  clearAllUsageData() {
+    return this.outletsService.clearAllUsageData();
   }
 }

@@ -158,6 +158,25 @@ class ApiService {
     }
   }
 
+  async updateOutletName(id: number, name: string) {
+    try {
+      const response = await fetch(`${this.baseUrl}/outlets/${id}/name`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error updating outlet name:', error);
+      throw error;
+    }
+  }
+
   // Power Strips
   async getPowerstrips() {
     try {
@@ -181,6 +200,94 @@ class ApiService {
       return await response.json();
     } catch (error) {
       console.error('Error fetching powerstrip:', error);
+      throw error;
+    }
+  }
+
+  // Usage Aggregation APIs for Reporting Charts
+  async getHourlyUsage(powerstripId: number) {
+    try {
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/hourly`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching hourly usage:', error);
+      throw error;
+    }
+  }
+
+  async getDailyUsage(powerstripId: number, year?: number, month?: number) {
+    try {
+      const params = new URLSearchParams();
+      if (year) params.append('year', year.toString());
+      if (month) params.append('month', month.toString());
+
+      const url = `${this.baseUrl}/powerstrips/${powerstripId}/usage/daily${params.toString() ? `?${params}` : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching daily usage:', error);
+      throw error;
+    }
+  }
+
+  async getMonthlyUsage(powerstripId: number, year?: number) {
+    try {
+      const params = year ? `?year=${year}` : '';
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/monthly${params}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching monthly usage:', error);
+      throw error;
+    }
+  }
+
+  async getPast30DaysUsage(powerstripId: number) {
+    try {
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/past30days`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching past 30 days usage:', error);
+      throw error;
+    }
+  }
+
+  async getTodayUsage(powerstripId: number) {
+    try {
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/today`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching today usage:', error);
+      throw error;
+    }
+  }
+
+  // Development/Testing Utilities
+  async clearAllUsageData() {
+    try {
+      const response = await fetch(`${this.baseUrl}/outlets/usage-logs/clear`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error clearing usage data:', error);
       throw error;
     }
   }
