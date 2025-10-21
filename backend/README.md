@@ -70,6 +70,18 @@ npm run start:prod
 
 The server will start on `http://localhost:3000`
 
+## API Documentation
+
+**Swagger/OpenAPI Documentation:** `http://localhost:3000/docs`
+
+An interactive API documentation is available at the `/docs` endpoint. You can:
+- View all available endpoints
+- See request/response schemas
+- Test API calls directly in your browser
+- No need for Postman!
+
+Simply open `http://localhost:3000/docs` in your browser after starting the server.
+
 ## API Endpoints
 
 ### Power Strips
