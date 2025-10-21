@@ -4,15 +4,22 @@ import { useRouter } from "expo-router";
 import * as Location from "expo-location";
 import { WebView } from "react-native-webview";
 
-export function MobileMap() {
+interface MobileMapProps {
+  location: { latitude: number; longitude: number } | null;
+  onLocationChange: (location: { latitude: number; longitude: number }) => void;
+  radius: number; // in meters
+}
+
+export function MobileMap({ location: propLocation, onLocationChange, radius }: MobileMapProps) {
   const router = useRouter();
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
+  const [displayInfo, setDisplayInfo] = useState<{
     address: string;
     city: string;
   } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+
+  // Use prop location, not internal state
+  const location = propLocation;
 
   const getCurrentLocation = async () => {
     try {
@@ -34,12 +41,16 @@ export function MobileMap() {
         accuracy: Location.Accuracy.Balanced,
       });
 
-      // Reverse geocode to get address (not available on web in SDK 49+)
+      // Call parent callback with new location
+      onLocationChange({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+
+      // Reverse geocode to get address for display (not available on web in SDK 49+)
       if (Platform.OS === 'web') {
         // For web, just show coordinates
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
+        setDisplayInfo({
           address: `Lat: ${position.coords.latitude.toFixed(6)}`,
           city: `Lng: ${position.coords.longitude.toFixed(6)}`,
         });
@@ -51,17 +62,13 @@ export function MobileMap() {
             longitude: position.coords.longitude,
           });
 
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
+          setDisplayInfo({
             address: `${geocode.streetNumber || ''} ${geocode.street || 'Unknown Street'}`.trim(),
             city: `${geocode.city || ''}, ${geocode.region || ''}, ${geocode.postalCode || ''}`,
           });
         } catch (geocodeError) {
           // Fallback to coordinates if geocoding fails
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
+          setDisplayInfo({
             address: `Lat: ${position.coords.latitude.toFixed(6)}`,
             city: `Lng: ${position.coords.longitude.toFixed(6)}`,
           });
@@ -81,19 +88,23 @@ export function MobileMap() {
   };
 
   const handleMapPress = () => {
-    // Navigate to manual pin location screen with current location
+    // Navigate to manual pin location screen with current location and radius
     if (location) {
       router.push({
         pathname: "/pin-location",
         params: {
           latitude: location.latitude.toString(),
           longitude: location.longitude.toString(),
-          address: location.address,
-          city: location.city,
+          radius: radius.toString(),
         },
       });
     } else {
-      router.push("/pin-location");
+      router.push({
+        pathname: "/pin-location",
+        params: {
+          radius: radius.toString(),
+        },
+      });
     }
   };
 
@@ -128,7 +139,7 @@ export function MobileMap() {
 
   // Render map preview using Leaflet for web, static map for mobile
   if (Platform.OS === "web") {
-    const { MapContainer, TileLayer, Marker } = require("react-leaflet");
+    const { MapContainer, TileLayer, Marker, Circle } = require("react-leaflet");
     const L = require("leaflet");
     require("leaflet/dist/leaflet.css");
 
@@ -159,6 +170,16 @@ export function MobileMap() {
             touchZoom={false}
           >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Circle
+              center={[location.latitude, location.longitude]}
+              radius={radius}
+              pathOptions={{
+                color: '#0F0E41',
+                fillColor: '#0F0E41',
+                fillOpacity: 0.1,
+                weight: 2,
+              }}
+            />
             <Marker position={[location.latitude, location.longitude]} />
           </MapContainer>
 
@@ -187,10 +208,10 @@ export function MobileMap() {
             </View>
             <View className="flex-1">
               <Text className="text-[#0F0E41] font-semibold text-xs leading-4">
-                {location.address}
+                {displayInfo?.address || 'Loading...'}
               </Text>
               <Text className="text-[#6B7280] text-xs mt-0.5">
-                {location.city}
+                {displayInfo?.city || ''}
               </Text>
             </View>
           </View>
@@ -240,6 +261,15 @@ export function MobileMap() {
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Add circle to show geofence radius
+        L.circle([${location.latitude}, ${location.longitude}], {
+          color: '#0F0E41',
+          fillColor: '#0F0E41',
+          fillOpacity: 0.1,
+          radius: ${radius},
+          weight: 2
         }).addTo(map);
 
         var redIcon = L.icon({
@@ -297,10 +327,10 @@ export function MobileMap() {
           </View>
           <View className="flex-1">
             <Text className="text-[#0F0E41] font-semibold text-xs leading-4">
-              {location.address}
+              {displayInfo?.address || 'Loading...'}
             </Text>
             <Text className="text-[#6B7280] text-xs mt-0.5">
-              {location.city}
+              {displayInfo?.city || ''}
             </Text>
           </View>
         </View>

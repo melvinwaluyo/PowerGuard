@@ -1,7 +1,17 @@
 import { Text, View } from "react-native";
 import InteractiveMap from "./InteractiveMap";
 
-export default function PinLocationSection() {
+interface PinLocationSectionProps {
+  location: { latitude: number; longitude: number } | null;
+  onLocationChange: (location: { latitude: number; longitude: number }) => void;
+  radius: number;
+}
+
+export default function PinLocationSection({
+  location,
+  onLocationChange,
+  radius,
+}: PinLocationSectionProps) {
   return (
     <View
       className="bg-white rounded-2xl p-4 mb-4 w-full max-w-[400px]"
@@ -16,7 +26,11 @@ export default function PinLocationSection() {
       <Text className="text-base font-semibold text-[#0F0E41] mb-3">
         Home Location
       </Text>
-      <InteractiveMap />
+      <InteractiveMap
+        location={location}
+        onLocationChange={onLocationChange}
+        radius={radius}
+      />
     </View>
   );
 }
