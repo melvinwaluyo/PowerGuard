@@ -14,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import "../../global.css";
+import { useOutlets } from "@/context/OutletContext";
 
 // Simple seeded random function for consistent dummy data
 const seededRandom = (seed: number): number => {
@@ -117,10 +118,37 @@ const generateChartData = () => {
     });
   }
 
+  // Past 30 Days: Generate data for last 30 days
+  const past30DaysData = [];
+  for (let daysAgo = 29; daysAgo >= 0; daysAgo--) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - daysAgo);
+    const dayOfMonth = date.getDate();
+    const monthOfDay = date.getMonth();
+
+    // Generate static dummy usage data (3-7 kWh per day)
+    const usage = 3 + seededRandom(dayOfMonth + monthOfDay * 100 + 400) * 4;
+
+    // Format as day/month (e.g., "21/10")
+    const dateLabel = `${dayOfMonth}/${monthOfDay + 1}`;
+
+    // Format full date (e.g., "10 October 2025")
+    const dayPadded = dayOfMonth.toString().padStart(2, '0');
+    const fullDate = `${dayPadded} ${monthFullNames[monthOfDay]} ${date.getFullYear()}`;
+
+    past30DaysData.push({
+      time: dateLabel,
+      usage: parseFloat(usage.toFixed(1)),
+      label: fullDate,
+      dayIndex: daysAgo,
+    });
+  }
+
   return {
     Day: todayData,
     Month: monthData,
     Year: yearData,
+    Past30Days: past30DaysData,
   };
 };
 
@@ -152,6 +180,12 @@ const periods = ["Day", "Month", "Year"] as const;
 
 const PowerUsageChart: React.FC = () => {
   const [period, setPeriod] = useState<"Day" | "Month" | "Year">("Day");
+  const { outlets } = useOutlets();
+
+  // Calculate total current power draw from all outlets
+  const totalPowerDraw = React.useMemo(() => {
+    return outlets.reduce((sum, outlet) => sum + outlet.powerDraw, 0);
+  }, [outlets]);
 
   // Generate data dynamically based on current date/time
   const chartData = React.useMemo(() => generateChartData(), []);
@@ -163,12 +197,21 @@ const PowerUsageChart: React.FC = () => {
     console.log("Expand chart");
   };
 
-  // Calculate average usage
-  const getAverageUsage = () => {
+  // Calculate total usage for current period
+  const getTotalUsage = () => {
     if (data.length === 0) return 0;
     const total = data.reduce((sum, item) => sum + item.usage, 0);
-    return total / data.length;
+    return total;
   };
+
+  // Calculate totals for all periods for stat cards
+  const todayTotal = React.useMemo(() => {
+    return chartData.Day.reduce((sum, item) => sum + item.usage, 0);
+  }, [chartData.Day]);
+
+  const past30DaysTotal = React.useMemo(() => {
+    return chartData.Past30Days.reduce((sum, item) => sum + item.usage, 0);
+  }, [chartData.Past30Days]);
 
   return (
     <View className="flex-1 bg-[#E7E7E7]">
@@ -229,10 +272,10 @@ const PowerUsageChart: React.FC = () => {
             </View>
             <View className="flex-row items-baseline">
               <Text className="text-[#0F0E41] text-3xl font-bold">
-                {getAverageUsage().toFixed(period === "Year" ? 0 : period === "Month" ? 1 : 2)}
+                {getTotalUsage().toFixed(period === "Year" ? 0 : period === "Month" ? 1 : 2)}
               </Text>
               <Text className="text-[#6B7280] text-base font-medium ml-2">
-                kWh avg
+                kWh
               </Text>
             </View>
             <Text className="text-[#6B7280] text-sm mt-1">
@@ -266,7 +309,7 @@ const PowerUsageChart: React.FC = () => {
                   <defs>
                     <linearGradient id="barGradientWeb" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
-                      <stop offset="100%" stopColor="#2563eb" stopOpacity={1} />
+                      <stop offset="100%" stopColor="#1e40af" stopOpacity={1} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -305,7 +348,7 @@ const PowerUsageChart: React.FC = () => {
             }}
           >
             <Text className="text-[#6B7280] text-[15px]">Today</Text>
-            <Text className="text-xl font-bold mt-1.5">8.7 kWh</Text>
+            <Text className="text-xl font-bold mt-1.5">{todayTotal.toFixed(2)} kWh</Text>
           </View>
           <View
             className="flex-1 bg-white rounded-[20px] items-center mx-2 min-w-0"
@@ -318,8 +361,8 @@ const PowerUsageChart: React.FC = () => {
               elevation: 8,
             }}
           >
-            <Text className="text-[#6B7280] text-[15px]">This Month</Text>
-            <Text className="text-xl font-bold mt-1.5">124.5 kWh</Text>
+            <Text className="text-[#6B7280] text-[15px]">Past 30 days</Text>
+            <Text className="text-xl font-bold mt-1.5">{past30DaysTotal.toFixed(1)} kWh</Text>
           </View>
         </View>
 
@@ -336,7 +379,7 @@ const PowerUsageChart: React.FC = () => {
             }}
           >
             <Text className="text-[#6B7280] text-[15px]">Current Power Draw</Text>
-            <Text className="text-xl font-bold mt-1.5">450 W</Text>
+            <Text className="text-xl font-bold mt-1.5">{totalPowerDraw} W</Text>
           </View>
         </View>
       </ScrollView>

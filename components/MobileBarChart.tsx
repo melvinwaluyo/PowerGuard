@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Dimensions, View, Text, GestureResponderEvent } from "react-native";
-import Svg, { Rect, Line, Text as SvgText, G, Defs, LinearGradient, Stop } from "react-native-svg";
+import Svg, { Rect, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop } from "react-native-svg";
 
 interface DataPoint {
   time: string;
@@ -14,6 +14,25 @@ interface MobileBarChartProps {
   maxValue?: number;
   unit?: string;
 }
+
+// Helper function to create a path for a rectangle with rounded top corners only
+const createRoundedTopRectPath = (x: number, y: number, width: number, height: number, radius: number): string => {
+  // Ensure radius doesn't exceed half the width or height
+  const r = Math.min(radius, width / 2, height);
+
+  if (height <= 0 || width <= 0) return '';
+
+  // Start at bottom-left, go counter-clockwise
+  return `
+    M ${x},${y + height}
+    L ${x},${y + r}
+    Q ${x},${y} ${x + r},${y}
+    L ${x + width - r},${y}
+    Q ${x + width},${y} ${x + width},${y + r}
+    L ${x + width},${y + height}
+    Z
+  `;
+};
 
 export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarChartProps) {
   const screenWidth = Dimensions.get("window").width;
@@ -137,12 +156,12 @@ export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarCha
           {/* Normal bar gradient */}
           <LinearGradient id="barGradient" x1="0%" y1="0%" x2="0%" y2="100%">
             <Stop offset="0%" stopColor="#60a5fa" stopOpacity="1" />
-            <Stop offset="100%" stopColor="#2563eb" stopOpacity="1" />
+            <Stop offset="100%" stopColor="#1e40af" stopOpacity="1" />
           </LinearGradient>
           {/* Active bar gradient (darker) */}
           <LinearGradient id="barGradientActive" x1="0%" y1="0%" x2="0%" y2="100%">
             <Stop offset="0%" stopColor="#3b82f6" stopOpacity="1" />
-            <Stop offset="100%" stopColor="#1e40af" stopOpacity="1" />
+            <Stop offset="100%" stopColor="#1e3a8a" stopOpacity="1" />
           </LinearGradient>
         </Defs>
 
@@ -184,16 +203,11 @@ export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarCha
 
         {/* Bars */}
         {bars.map((bar, index) => (
-          <Rect
+          <Path
             key={`bar-${index}`}
-            x={bar.x}
-            y={bar.y}
-            width={actualBarWidth}
-            height={bar.barHeight}
+            d={createRoundedTopRectPath(bar.x, bar.y, actualBarWidth, bar.barHeight, 4)}
             fill={activeIndex === index ? "url(#barGradientActive)" : "url(#barGradient)"}
             opacity={activeIndex === null || activeIndex === index ? 1 : 0.5}
-            rx={3}
-            ry={3}
           />
         ))}
 
