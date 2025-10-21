@@ -19,6 +19,7 @@ export default function PinLocationScreen() {
     address: (params.address as string) || "",
     city: (params.city as string) || "",
   });
+  const [radius, setRadius] = useState(params.radius ? parseFloat(params.radius as string) : 1500);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
   const [isInitialized, setIsInitialized] = useState(!!params.latitude);
 
@@ -117,7 +118,7 @@ export default function PinLocationScreen() {
 
   if (Platform.OS === "web") {
     // Web: Use react-leaflet for interactive map
-    const { MapContainer, TileLayer, Marker, useMapEvents } = require("react-leaflet");
+    const { MapContainer, TileLayer, Marker, Circle, useMapEvents } = require("react-leaflet");
     const L = require("leaflet");
     require("leaflet/dist/leaflet.css");
 
@@ -139,10 +140,22 @@ export default function PinLocationScreen() {
       });
 
       return (
-        <Marker
-          position={[selectedLocation.latitude, selectedLocation.longitude]}
-          icon={redIcon}
-        />
+        <>
+          <Circle
+            center={[selectedLocation.latitude, selectedLocation.longitude]}
+            radius={radius}
+            pathOptions={{
+              color: '#0F0E41',
+              fillColor: '#0F0E41',
+              fillOpacity: 0.1,
+              weight: 2,
+            }}
+          />
+          <Marker
+            position={[selectedLocation.latitude, selectedLocation.longitude]}
+            icon={redIcon}
+          />
+        </>
       );
     }
 
@@ -255,6 +268,16 @@ export default function PinLocationScreen() {
           attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
+        // Add circle to show geofence radius
+        var circle = L.circle([${selectedLocation.latitude}, ${selectedLocation.longitude}], {
+          color: '#0F0E41',
+          fillColor: '#0F0E41',
+          fillOpacity: 0.1,
+          radius: ${radius},
+          weight: 2
+        }).addTo(map);
+        window.circle = circle;
+
         // Custom red marker icon
         var redIcon = L.icon({
           iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
@@ -271,6 +294,7 @@ export default function PinLocationScreen() {
 
         // Handle map clicks
         map.on('click', function(e) {
+          circle.setLatLng(e.latlng);
           marker.setLatLng(e.latlng);
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'locationChange',

@@ -1,26 +1,48 @@
 import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { OutletTimerSetting } from "@/types/outlet";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 
-export default function AutoShutdownSection() {
-  const [currentTimer, setCurrentTimer] = useState<OutletTimerSetting>({
-    hours: 0,
-    minutes: 15,
-    seconds: 0,
+interface AutoShutdownSectionProps {
+  autoShutdownTime: number; // in seconds
+  onShutdownTimeChange: (timeInSeconds: number) => void;
+}
+
+export default function AutoShutdownSection({
+  autoShutdownTime,
+  onShutdownTimeChange,
+}: AutoShutdownSectionProps) {
+  // Convert seconds to timer format
+  const secondsToTimer = (seconds: number): OutletTimerSetting => ({
+    hours: Math.floor(seconds / 3600),
+    minutes: Math.floor((seconds % 3600) / 60),
+    seconds: seconds % 60,
     isActive: false,
   });
-  const [draftTimer, setDraftTimer] = useState<OutletTimerSetting>({
-    hours: 0,
-    minutes: 15,
-    seconds: 0,
-    isActive: false,
-  });
+
+  // Convert timer to seconds
+  const timerToSeconds = (timer: OutletTimerSetting): number => {
+    return timer.hours * 3600 + timer.minutes * 60 + timer.seconds;
+  };
+
+  const [currentTimer, setCurrentTimer] = useState<OutletTimerSetting>(
+    secondsToTimer(autoShutdownTime)
+  );
+  const [draftTimer, setDraftTimer] = useState<OutletTimerSetting>(
+    secondsToTimer(autoShutdownTime)
+  );
   const [modalVisible, setModalVisible] = useState(false);
+
+  // Update timer when prop changes
+  useEffect(() => {
+    setCurrentTimer(secondsToTimer(autoShutdownTime));
+  }, [autoShutdownTime]);
 
   const handleConfirm = (value: OutletTimerSetting) => {
     setCurrentTimer(value);
+    const seconds = timerToSeconds(value);
+    onShutdownTimeChange(seconds);
     setModalVisible(false);
   };
 
