@@ -5,12 +5,14 @@ import GeofencingSection from "@/components/GeofencingSection";
 import PinLocationSection from "@/components/PinLocationSection";
 import { Platform, ScrollView, StatusBar, Text, View, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useLocation } from "@/context/LocationContext";
 import { api, GeofenceSetting } from "@/services/api";
 
 // Default powerstrip ID - TODO: Make this dynamic based on user's powerstrip
 const DEFAULT_POWERSTRIP_ID = 1;
 
 export default function SettingsScreen() {
+  const { pendingLocation, setPendingLocation } = useLocation();
   const [geofencingEnabled, setGeofencingEnabled] = useState(false);
   const [radius, setRadius] = useState(1500);
   const [autoShutdownTime, setAutoShutdownTime] = useState(900); // 15 minutes in seconds
@@ -26,6 +28,16 @@ export default function SettingsScreen() {
   useEffect(() => {
     loadGeofenceSettings();
   }, []);
+
+  // Handle location updates from pin-location screen via context
+  useEffect(() => {
+    if (pendingLocation) {
+      handleLocationChange(pendingLocation);
+      // Clear the pending location after processing
+      setPendingLocation(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLocation]);
 
   const loadGeofenceSettings = async () => {
     try {

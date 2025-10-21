@@ -4,6 +4,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { WebView } from "react-native-webview";
+import { useLocation } from "@/context/LocationContext";
 
 const BASE_TOP_PADDING = 16;
 
@@ -11,8 +12,10 @@ export default function PinLocationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const webViewRef = useRef<WebView>(null);
+  const { setPendingLocation } = useLocation();
 
   // Initialize with params if available, otherwise null (will auto-fetch)
+  const hasInitialLocation = !!(params.latitude && params.longitude);
   const [selectedLocation, setSelectedLocation] = useState({
     latitude: params.latitude ? parseFloat(params.latitude as string) : 0,
     longitude: params.longitude ? parseFloat(params.longitude as string) : 0,
@@ -21,7 +24,7 @@ export default function PinLocationScreen() {
   });
   const [radius, setRadius] = useState(params.radius ? parseFloat(params.radius as string) : 1500);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(!!params.latitude);
+  const [isInitialized, setIsInitialized] = useState(hasInitialLocation);
 
   const topInset =
     (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0) +
@@ -70,7 +73,13 @@ export default function PinLocationScreen() {
   };
 
   const handleSaveLocation = () => {
-    // Save location logic here
+    // Set the pending location in context
+    setPendingLocation({
+      latitude: selectedLocation.latitude,
+      longitude: selectedLocation.longitude,
+    });
+
+    // Navigate back to dismiss the modal properly
     router.back();
   };
 
@@ -109,11 +118,15 @@ export default function PinLocationScreen() {
     }
   };
 
-  // Auto-fetch current location on mount if no params provided
+  // Auto-fetch current location on mount ONLY if no location was provided in params
   useEffect(() => {
-    if (!isInitialized) {
+    if (!hasInitialLocation) {
       handleMyLocation();
+    } else if (hasInitialLocation && !selectedLocation.address) {
+      // If we have initial coordinates but no address, fetch it
+      handleLocationChange(selectedLocation.latitude, selectedLocation.longitude);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (Platform.OS === "web") {
