@@ -2,8 +2,8 @@ import { BottomNavigation } from "@/components/BottomNavigation";
 import { MobileBarChart } from "@/components/MobileBarChart";
 import { ReportHeader } from "@/components/ReportHeader";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState, useEffect } from "react";
-import { Platform, ScrollView, Text, TouchableOpacity, View, ActivityIndicator, Alert, Animated } from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import { Platform, ScrollView, Text, TouchableOpacity, View, ActivityIndicator, Alert, Animated, FlatList, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
 import {
   Bar,
   BarChart,
@@ -37,18 +37,32 @@ const nowUTCPlus7 = (): Date => {
   return toUTCPlus7(new Date());
 };
 
-// Transform API data to chart format
-const transformHourlyData = (apiData: any[]) => {
+// Transform API data to chart format for a specific date
+const transformHourlyData = (apiData: any[], targetDate: Date) => {
   const now = nowUTCPlus7();
-  const currentHour = now.getUTCHours();
+  const targetDay = targetDate.getUTCDate();
+  const targetMonth = targetDate.getUTCMonth();
+  const targetYear = targetDate.getUTCFullYear();
 
-  // Create map of existing data
+  const isToday = targetDay === now.getUTCDate() &&
+                  targetMonth === now.getUTCMonth() &&
+                  targetYear === now.getUTCFullYear();
+  const currentHour = isToday ? now.getUTCHours() : 23;
+
+  // Create map of existing data - ONLY from target date
   const dataMap = new Map();
   apiData.forEach(item => {
     // Convert to UTC+7 and extract hour
     const dateUTCPlus7 = toUTCPlus7(new Date(item.hour));
     const hour = dateUTCPlus7.getUTCHours();
-    dataMap.set(hour, item.total_energy_kwh || 0);
+    const day = dateUTCPlus7.getUTCDate();
+    const month = dateUTCPlus7.getUTCMonth();
+    const year = dateUTCPlus7.getUTCFullYear();
+
+    // Only include data from target date
+    if (day === targetDay && month === targetMonth && year === targetYear) {
+      dataMap.set(hour, item.total_energy_kwh || 0);
+    }
   });
 
   // Generate all 24 hours
@@ -64,7 +78,7 @@ const transformHourlyData = (apiData: any[]) => {
       usage: parseFloat(usage.toFixed(3)),
       label: timeLabel,
       hourIndex: hour,
-      isFuture: hour > currentHour,
+      isFuture: isToday && hour > currentHour,
     });
   }
   return result;
@@ -174,16 +188,26 @@ const calculateMaxValue = (data: { usage: number }[]) => {
 
 const periods = ["Day", "Month", "Year"] as const;
 
+interface DataPage {
+  date: Date;
+  dateString: string;
+  data: any[];
+  total: number;
+}
+
 const PowerUsageChart: React.FC = () => {
   const [period, setPeriod] = useState<"Day" | "Month" | "Year">("Day");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [hourlyData, setHourlyData] = useState<any[]>([]);
-  const [dailyData, setDailyData] = useState<any[]>([]);
-  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [dayPages, setDayPages] = useState<DataPage[]>([]);
+  const [monthPages, setMonthPages] = useState<DataPage[]>([]);
+  const [yearPages, setYearPages] = useState<DataPage[]>([]);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [todayTotal, setTodayTotal] = useState(0);
   const [past30DaysTotal, setPast30DaysTotal] = useState(0);
   const { outlets } = useOutlets();
+  const flatListRef = useRef<FlatList>(null);
+  const [containerWidth, setContainerWidth] = useState(600); // Default max width
 
   // Animation for refresh button
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
@@ -235,20 +259,170 @@ const PowerUsageChart: React.FC = () => {
         api.getPast30DaysUsage(DEFAULT_POWERSTRIP_ID),
       ]);
 
-      // Transform data
-      setHourlyData(transformHourlyData(hourly));
-      setDailyData(transformDailyData(daily));
-      setMonthlyData(transformMonthlyData(monthly));
+      // Build day pages from hourly data
+      const dayPagesMap = new Map<string, any[]>();
+      hourly.forEach((item: any) => {
+        const dateUTCPlus7 = toUTCPlus7(new Date(item.hour));
+        const dateKey = `${dateUTCPlus7.getUTCFullYear()}-${dateUTCPlus7.getUTCMonth()}-${dateUTCPlus7.getUTCDate()}`;
+        if (!dayPagesMap.has(dateKey)) {
+          dayPagesMap.set(dateKey, []);
+        }
+        dayPagesMap.get(dateKey)!.push(item);
+      });
+
+      const dayPagesArray: DataPage[] = Array.from(dayPagesMap.entries())
+        .map(([dateKey, items]) => {
+          const firstItem = items[0];
+          const dateUTCPlus7 = toUTCPlus7(new Date(firstItem.hour));
+          const targetDate = new Date(Date.UTC(
+            dateUTCPlus7.getUTCFullYear(),
+            dateUTCPlus7.getUTCMonth(),
+            dateUTCPlus7.getUTCDate()
+          ));
+
+          const transformedData = transformHourlyData(hourly, targetDate);
+          const total = transformedData.reduce((sum, item) => sum + item.usage, 0);
+
+          return {
+            date: targetDate,
+            dateString: targetDate.toLocaleDateString("en-US", {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+              timeZone: "UTC"
+            }),
+            data: transformedData,
+            total: parseFloat(total.toFixed(2))
+          };
+        })
+        .sort((a, b) => a.date.getTime() - b.date.getTime()); // Oldest first, swipe right for newer
+
+      setDayPages(dayPagesArray.length > 0 ? dayPagesArray : [{
+        date: now,
+        dateString: now.toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC"
+        }),
+        data: transformHourlyData([], now),
+        total: 0
+      }]);
+
+      // Build month pages from daily data
+      const monthPagesMap = new Map<string, any[]>();
+      daily.forEach((item: any) => {
+        const dateUTCPlus7 = toUTCPlus7(new Date(item.day));
+        const monthKey = `${dateUTCPlus7.getUTCFullYear()}-${dateUTCPlus7.getUTCMonth()}`;
+        if (!monthPagesMap.has(monthKey)) {
+          monthPagesMap.set(monthKey, []);
+        }
+        monthPagesMap.get(monthKey)!.push(item);
+      });
+
+      const monthPagesArray: DataPage[] = Array.from(monthPagesMap.entries())
+        .map(([monthKey, items]) => {
+          const [year, month] = monthKey.split('-').map(Number);
+          const targetDate = new Date(Date.UTC(year, month, 1));
+          const transformedData = transformDailyData(items);
+          const total = transformedData.reduce((sum, item) => sum + item.usage, 0);
+
+          return {
+            date: targetDate,
+            dateString: targetDate.toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+              timeZone: "UTC"
+            }),
+            data: transformedData,
+            total: parseFloat(total.toFixed(1))
+          };
+        })
+        .sort((a, b) => a.date.getTime() - b.date.getTime()); // Oldest first
+
+      setMonthPages(monthPagesArray.length > 0 ? monthPagesArray : [{
+        date: now,
+        dateString: now.toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+          timeZone: "UTC"
+        }),
+        data: transformDailyData([]),
+        total: 0
+      }]);
+
+      // Build year pages from monthly data
+      const yearPagesMap = new Map<string, any[]>();
+      monthly.forEach((item: any) => {
+        const dateUTCPlus7 = toUTCPlus7(new Date(item.month));
+        const yearKey = `${dateUTCPlus7.getUTCFullYear()}`;
+        if (!yearPagesMap.has(yearKey)) {
+          yearPagesMap.set(yearKey, []);
+        }
+        yearPagesMap.get(yearKey)!.push(item);
+      });
+
+      const yearPagesArray: DataPage[] = Array.from(yearPagesMap.entries())
+        .map(([yearKey, items]) => {
+          const year = parseInt(yearKey);
+          const targetDate = new Date(Date.UTC(year, 0, 1));
+          const transformedData = transformMonthlyData(items);
+          const total = transformedData.reduce((sum, item) => sum + item.usage, 0);
+
+          return {
+            date: targetDate,
+            dateString: year.toString(),
+            data: transformedData,
+            total: parseFloat(total.toFixed(0))
+          };
+        })
+        .sort((a, b) => a.date.getTime() - b.date.getTime()); // Oldest first
+
+      setYearPages(yearPagesArray.length > 0 ? yearPagesArray : [{
+        date: now,
+        dateString: now.getUTCFullYear().toString(),
+        data: transformMonthlyData([]),
+        total: 0
+      }]);
 
       // Set totals
       setTodayTotal(typeof today === 'number' ? today : 0);
       setPast30DaysTotal(past30.reduce((sum: number, item: any) => sum + (item.total_energy_kwh || 0), 0));
+
+      // Default to last page (most recent)
+      const lastPageIndex = Math.max(0, dayPagesArray.length - 1);
+      setCurrentPageIndex(lastPageIndex);
     } catch (error) {
       console.error('Error fetching usage data:', error);
       // Set empty data on error
-      setHourlyData([]);
-      setDailyData([]);
-      setMonthlyData([]);
+      const now = nowUTCPlus7();
+      setDayPages([{
+        date: now,
+        dateString: now.toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC"
+        }),
+        data: [],
+        total: 0
+      }]);
+      setMonthPages([{
+        date: now,
+        dateString: now.toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+          timeZone: "UTC"
+        }),
+        data: [],
+        total: 0
+      }]);
+      setYearPages([{
+        date: now,
+        dateString: now.getUTCFullYear().toString(),
+        data: [],
+        total: 0
+      }]);
       setTodayTotal(0);
       setPast30DaysTotal(0);
     } finally {
@@ -265,19 +439,61 @@ const PowerUsageChart: React.FC = () => {
     fetchData();
   }, []);
 
-  // Select current period data
-  const data = period === "Day" ? hourlyData : period === "Month" ? dailyData : monthlyData;
+  // Track the last checked date to detect day changes
+  const lastCheckedDateRef = React.useRef<string>('');
+
+  // Check for day changes and auto-refresh
+  useEffect(() => {
+    const checkDayChange = () => {
+      const now = nowUTCPlus7();
+      const currentDateString = `${now.getUTCFullYear()}-${now.getUTCMonth()}-${now.getUTCDate()}`;
+
+      if (lastCheckedDateRef.current && lastCheckedDateRef.current !== currentDateString) {
+        console.log('Day changed, refreshing data...');
+        fetchData();
+      }
+
+      lastCheckedDateRef.current = currentDateString;
+    };
+
+    // Check immediately
+    checkDayChange();
+
+    // Check every minute for day changes
+    const interval = setInterval(checkDayChange, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Select current period pages
+  const pages = period === "Day" ? dayPages : period === "Month" ? monthPages : yearPages;
+  const currentPage = pages[currentPageIndex] || pages[0];
+  const data = currentPage?.data || [];
   const maxValue = React.useMemo(() => calculateMaxValue(data), [data]);
 
-  // Generate unique key for chart to force re-render when data changes
-  const chartKey = React.useMemo(() => {
-    const dataSum = data.reduce((sum, item) => sum + item.usage, 0);
-    return `${period}-${data.length}-${dataSum.toFixed(3)}`;
-  }, [data, period]);
+  // Reset to last page when period changes
+  useEffect(() => {
+    const lastIndex = Math.max(0, pages.length - 1);
+    setCurrentPageIndex(lastIndex);
 
-  const handleExpand = () => {
-    // TODO: Implement expand functionality
-    console.log("Expand chart");
+    // Scroll to last page
+    setTimeout(() => {
+      if (pages.length > 0) {
+        flatListRef.current?.scrollToIndex({
+          index: lastIndex,
+          animated: false
+        });
+      }
+    }, 100);
+  }, [period, pages.length]);
+
+  // Handle scroll to update current page
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / containerWidth);
+    if (index !== currentPageIndex && index >= 0 && index < pages.length) {
+      setCurrentPageIndex(index);
+    }
   };
 
   const handleClearData = () => {
@@ -306,11 +522,9 @@ const PowerUsageChart: React.FC = () => {
     );
   };
 
-  // Calculate total usage for current period
+  // Calculate total usage for current page
   const getTotalUsage = () => {
-    if (data.length === 0) return 0;
-    const total = data.reduce((sum, item) => sum + item.usage, 0);
-    return total;
+    return currentPage?.total || 0;
   };
 
   if (isLoading) {
@@ -404,12 +618,6 @@ const PowerUsageChart: React.FC = () => {
                     />
                   </Animated.View>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleExpand}
-                  className="w-8 h-8 items-center justify-center rounded-full bg-[#F3F4F6]"
-                >
-                  <Ionicons name="expand-outline" size={18} color="#0F0E41" />
-                </TouchableOpacity>
               </View>
             </View>
             <View className="flex-row items-baseline">
@@ -421,86 +629,112 @@ const PowerUsageChart: React.FC = () => {
               </Text>
             </View>
             <Text className="text-[#6B7280] text-sm mt-1">
-              {(() => {
-                const now = nowUTCPlus7();
-                switch (period) {
-                  case "Day":
-                    return now.toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                      timeZone: "UTC"
-                    });
-                  case "Month":
-                    return now.toLocaleDateString("en-US", {
-                      month: "long",
-                      year: "numeric",
-                      timeZone: "UTC"
-                    });
-                  case "Year":
-                    return now.getUTCFullYear().toString();
-                  default:
-                    return "";
-                }
-              })()}
+              {currentPage?.dateString || ""}
             </Text>
           </View>
 
-          {Platform.OS === "web" ? (
-            <View key={chartKey} className="w-full h-[260px]">
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={data} barCategoryGap="20%" barGap={2}>
-                  <defs>
-                    <linearGradient id="barGradientWeb" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
-                      <stop offset="100%" stopColor="#1e40af" stopOpacity={1} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis
-                    dataKey="time"
-                    axisLine={false}
-                    tickLine={false}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    domain={[0, maxValue]}
-                  />
-                  <Tooltip
-                    content={({ active, payload }) => {
-                      if (active && payload && payload[0]) {
-                        const data = payload[0].payload;
-                        // Don't show tooltip for empty data or future data
-                        if (data.usage === 0 || data.isFuture) {
-                          return null;
-                        }
-                        return (
-                          <div style={{
-                            backgroundColor: '#0F0E41',
-                            padding: '8px 12px',
-                            borderRadius: '6px',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                          }}>
-                            <p style={{ color: 'white', fontSize: '12px', fontWeight: '600', margin: '0 0 4px 0' }}>
-                              {data.label}
-                            </p>
-                            <p style={{ color: 'white', fontSize: '14px', fontWeight: '700', margin: 0 }}>
-                              {parseFloat(data.usage.toFixed(2))} kWh
-                            </p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Bar dataKey="usage" fill="url(#barGradientWeb)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+          {/* Carousel for multiple pages */}
+          <View
+            onLayout={(event) => {
+              const { width } = event.nativeEvent.layout;
+              setContainerWidth(width);
+            }}
+            style={{ width: '100%' }}
+          >
+            <FlatList
+              ref={flatListRef}
+              data={pages}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              keyExtractor={(item, index) => `${period}-page-${index}`}
+              initialScrollIndex={pages.length > 0 ? Math.max(0, pages.length - 1) : 0}
+              getItemLayout={(data, index) => ({
+                length: containerWidth,
+                offset: containerWidth * index,
+                index,
+              })}
+              renderItem={({ item: page }) => {
+                const pageData = page.data;
+                const pageMaxValue = calculateMaxValue(pageData);
+
+                return (
+                  <View style={{ width: containerWidth }}>
+                    {Platform.OS === "web" ? (
+                      <View className="w-full h-[260px]">
+                        <ResponsiveContainer width="100%" height={260}>
+                          <BarChart data={pageData} barCategoryGap="20%" barGap={2}>
+                            <defs>
+                              <linearGradient id="barGradientWeb" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
+                                <stop offset="100%" stopColor="#1e40af" stopOpacity={1} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis
+                              dataKey="time"
+                              axisLine={false}
+                              tickLine={false}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis
+                              axisLine={false}
+                              tickLine={false}
+                              domain={[0, pageMaxValue]}
+                            />
+                            <Tooltip
+                              content={({ active, payload }) => {
+                                if (active && payload && payload[0]) {
+                                  const data = payload[0].payload;
+                                  if (data.usage === 0 || data.isFuture) {
+                                    return null;
+                                  }
+                                  return (
+                                    <div style={{
+                                      backgroundColor: '#0F0E41',
+                                      padding: '8px 12px',
+                                      borderRadius: '6px',
+                                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                    }}>
+                                      <p style={{ color: 'white', fontSize: '12px', fontWeight: '600', margin: '0 0 4px 0' }}>
+                                        {data.label}
+                                      </p>
+                                      <p style={{ color: 'white', fontSize: '14px', fontWeight: '700', margin: 0 }}>
+                                        {parseFloat(data.usage.toFixed(2))} kWh
+                                      </p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Bar dataKey="usage" fill="url(#barGradientWeb)" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </View>
+                    ) : (
+                      <MobileBarChart data={pageData} maxValue={pageMaxValue} unit="kWh" />
+                    )}
+                  </View>
+                );
+              }}
+            />
+          </View>
+
+          {/* Pagination Dots */}
+          {pages.length > 1 && (
+            <View className="flex-row justify-center items-center mt-4 gap-2">
+              {pages.map((_, index) => (
+                <View
+                  key={`dot-${index}`}
+                  className={`h-2 rounded-full ${
+                    index === currentPageIndex ? 'w-6 bg-[#0F0E41]' : 'w-2 bg-[#D1D5DB]'
+                  }`}
+                />
+              ))}
             </View>
-          ) : (
-            <MobileBarChart key={chartKey} data={data} maxValue={maxValue} unit="kWh" />
           )}
         </View>
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Dimensions, View, Text, GestureResponderEvent } from "react-native";
-import Svg, { Rect, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop } from "react-native-svg";
+import Svg, { Rect, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop, Circle } from "react-native-svg";
 
 interface DataPoint {
   time: string;
@@ -210,6 +210,31 @@ export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarCha
             opacity={activeIndex === null || activeIndex === index ? 1 : 0.5}
           />
         ))}
+
+        {/* Active bar indicator - dotted line and dot */}
+        {activeIndex !== null && bars[activeIndex] && (
+          <G>
+            {/* Vertical dotted line from axis to top of bar */}
+            <Line
+              x1={bars[activeIndex].x + actualBarWidth / 2}
+              y1={axisBaselineY}
+              x2={bars[activeIndex].x + actualBarWidth / 2}
+              y2={bars[activeIndex].y}
+              stroke="#3b82f6"
+              strokeWidth={2}
+              strokeDasharray="4,4"
+            />
+            {/* Dot at the top of the bar */}
+            <Circle
+              cx={bars[activeIndex].x + actualBarWidth / 2}
+              cy={bars[activeIndex].y}
+              r={6}
+              fill="#3b82f6"
+              stroke="#ffffff"
+              strokeWidth={2}
+            />
+          </G>
+        )}
 
         {/* Y-axis labels */}
         {yAxisTicks.map(({ value, y }, index) => (

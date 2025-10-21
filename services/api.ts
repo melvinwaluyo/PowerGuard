@@ -205,15 +205,30 @@ class ApiService {
   }
 
   // Usage Aggregation APIs for Reporting Charts
-  async getHourlyUsage(powerstripId: number) {
+  async getHourlyUsage(powerstripId: number, date?: string) {
     try {
-      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/hourly`);
+      const params = date ? `?date=${date}` : '';
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/hourly${params}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       return await response.json();
     } catch (error) {
       console.error('Error fetching hourly usage:', error);
+      throw error;
+    }
+  }
+
+  // Get all dates that have hourly data
+  async getAvailableDates(powerstripId: number) {
+    try {
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/available-dates`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching available dates:', error);
       throw error;
     }
   }
