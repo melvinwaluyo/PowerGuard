@@ -38,11 +38,9 @@ model UsageLog {
   current   Float?    @db.Real
   power     Float?    @db.Real
   energy    Float?    @db.Real
-  createdAt DateTime? @default(now()) @map("createdat") @db.Timestamp(6)
+  createdAt DateTime? @default(now()) @map("createdat") @db.Timestamptz(6)
   outlet    Outlet?   @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([outletID, createdAt])
-  @@index([createdAt])
   @@map("usagelog")
 }
 
@@ -50,7 +48,7 @@ model NotificationLog {
   notificationID Int       @id @default(autoincrement()) @map("notificationid")
   outletID       Int?      @map("outletid")
   message        String?
-  createdAt      DateTime? @default(now()) @map("createdat") @db.Timestamp(6)
+  createdAt      DateTime? @default(now()) @map("createdat") @db.Timestamptz(6)
   outlet         Outlet?   @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("notificationlog")

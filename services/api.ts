@@ -1,23 +1,35 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 // PowerGuard API Service
-// For development:
-// - Web: localhost works fine
-// - Android Emulator: Use 10.0.2.2 (special alias to host machine)
-// - iOS Simulator: localhost works fine
-// - Physical Device: Replace with your computer's local IP (e.g., 192.168.1.100)
+// Automatically detects the backend server IP address
+// - Web: localhost
+// - Android Emulator: 10.0.2.2 (special alias to host machine)
+// - iOS/Physical Devices: Auto-detects from Expo dev server
 
 const getApiBaseUrl = () => {
+  // For web, use localhost
+  if (Platform.OS === 'web') {
+    return 'http://localhost:3000';
+  }
+
+  // For Android emulator, use the special alias to reach host machine
   if (Platform.OS === 'android') {
-    // Android emulator uses 10.0.2.2 to reach host machine's localhost
     return 'http://10.0.2.2:3000';
   }
-  if (Platform.OS === 'ios') {
-    // For iOS physical device, use your computer's local IP
-    // This also works for iOS simulator
-    return 'http://192.168.68.69:3000';
+
+  // For iOS and physical devices, auto-detect IP from Expo
+  // This gets the IP address of your development machine automatically
+  const expoDebuggerHost = Constants.expoConfig?.hostUri;
+
+  if (expoDebuggerHost) {
+    // Extract just the IP address (remove port if present)
+    const host = expoDebuggerHost.split(':')[0];
+    return `http://${host}:3000`;
   }
-  // For web, localhost works
+
+  // Fallback to localhost if auto-detection fails
+  console.warn('Could not auto-detect backend IP, falling back to localhost');
   return 'http://localhost:3000';
 };
 
