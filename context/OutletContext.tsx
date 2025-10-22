@@ -1,184 +1,116 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Outlet, OutletLogEntry } from "@/types/outlet";
+import { api } from "@/services/api";
 
 interface OutletContextValue {
   outlets: Outlet[];
-  toggleOutlet: (id: number) => void;
+  toggleOutlet: (id: number) => Promise<void>;
   updateOutlet: (id: number, updates: Partial<Outlet>) => void;
   getOutletById: (id: number) => Outlet | undefined;
+  renameOutlet: (id: number, name: string) => Promise<void>;
+  refreshOutlets: () => Promise<void>;
+  isLoading: boolean;
 }
 
 const OutletContext = createContext<OutletContextValue | null>(null);
 
-const createId = () => Math.random().toString(36).slice(2, 12);
+// Helper function to format seconds to HH:MM:SS
+const formatRuntime = (seconds: number | null): string => {
+  if (!seconds) return "00:00:00";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+};
 
-const createLog = (overrides: Partial<OutletLogEntry>): OutletLogEntry => ({
-  id: createId(),
-  timestamp: new Date().toISOString(),
-  action: "",
-  detail: "",
-  category: "power",
-  ...overrides,
-});
+// Helper function to transform backend outlet data to frontend Outlet type
+const transformOutlet = (backendOutlet: any): Outlet => {
+  const latestUsage = backendOutlet.usageLogs?.[0];
+  const power = latestUsage?.power || 0;
+  const isOn = backendOutlet.state || false;
 
-const DEFAULT_OUTLETS: Outlet[] = [
-  {
-    id: 1,
-    name: "Outlet 1",
-    status: "Disconnected",
-    power: 250,
-    duration: null,
-    isOn: false,
-    runtime: "00:00:00",
-    powerDraw: 0,
-    connection: "Disconnected",
-    timer: null,
-    logs: [
-      createLog({
-        timestamp: "2025-05-09T15:20:00.000Z",
-        action: "Auto shutdown",
-        detail: "Timer ended after scheduled 45 minutes",
-        category: "automation",
-      }),
-      createLog({
-        timestamp: "2025-05-09T14:35:00.000Z",
-        action: "Timer scheduled",
-        detail: "Countdown set for 45 minutes",
-        category: "automation",
-      }),
-    ],
-  },
-  {
-    id: 2,
-    name: "Outlet 2",
-    status: "Connected",
-    power: 250,
-    duration: "2h 5m 45s",
-    isOn: true,
-    runtime: "12:45:32",
-    powerDraw: 250,
-    connection: "Connected",
-    timer: {
-      hours: 0,
-      minutes: 15,
-      seconds: 0,
-      isActive: true,
-    },
-    logs: [
-      createLog({
-        timestamp: "2025-05-11T17:34:00.000Z",
-        action: "Outlet turned on",
-        detail: "Manual activation via app",
-        category: "power",
-      }),
-      createLog({
-        timestamp: "2025-05-11T16:12:00.000Z",
-        action: "Auto shutdown",
-        detail: "Turned off after no response to alert",
-        category: "safety",
-      }),
-      createLog({
-        timestamp: "2025-05-11T15:58:00.000Z",
-        action: "Device connected",
-        detail: "New device detected on outlet",
-        category: "maintenance",
-      }),
-      createLog({
-        timestamp: "2025-05-11T15:34:00.000Z",
-        action: "Timer set",
-        detail: "Duration configured for 2h 5m 45s",
-        category: "automation",
-      }),
-    ],
-  },
-  {
-    id: 3,
-    name: "Outlet 3",
-    status: "Disconnected",
-    power: 200,
-    duration: null,
-    isOn: false,
-    runtime: "00:00:00",
-    powerDraw: 0,
-    connection: "Disconnected",
-    timer: null,
-    logs: [
-      createLog({
-        timestamp: "2025-05-10T09:35:00.000Z",
-        action: "Energy limit reached",
-        detail: "Power cut after exceeding configured limit",
-        category: "safety",
-      }),
-    ],
-  },
-  {
-    id: 4,
-    name: "Outlet 4",
-    status: "Connected",
-    power: 180,
-    duration: "45m",
-    isOn: true,
-    runtime: "04:18:09",
-    powerDraw: 180,
-    connection: "Connected",
-    timer: {
-      hours: 1,
-      minutes: 0,
-      seconds: 0,
-      isActive: false,
-    },
-    logs: [
-      createLog({
-        timestamp: "2025-05-08T11:20:00.000Z",
-        action: "Firmware update",
-        detail: "Outlet restarted after maintenance",
-        category: "maintenance",
-      }),
-      createLog({
-        timestamp: "2025-05-08T10:55:00.000Z",
-        action: "Outlet turned on",
-        detail: "Manual activation via app",
-        category: "power",
-      }),
-    ],
-  },
-];
+  return {
+    id: backendOutlet.outletID,
+    name: backendOutlet.name || `Outlet ${backendOutlet.index || backendOutlet.outletID}`,
+    status: isOn ? "Connected" : "Disconnected",
+    power: power,
+    duration: isOn && backendOutlet.runtime ? formatRuntime(backendOutlet.runtime) : null,
+    isOn: isOn,
+    runtime: formatRuntime(backendOutlet.runtime),
+    powerDraw: isOn ? power : 0,
+    connection: isOn ? "Connected" : "Disconnected",
+    timer: backendOutlet.timer ? {
+      hours: Math.floor(backendOutlet.timer / 3600),
+      minutes: Math.floor((backendOutlet.timer % 3600) / 60),
+      seconds: backendOutlet.timer % 60,
+      isActive: isOn,
+    } : null,
+    logs: [], // Logs will be loaded separately in the detail view
+  };
+};
 
 export function OutletProvider({ children }: { children: ReactNode }) {
-  const [outlets, setOutlets] = useState<Outlet[]>(DEFAULT_OUTLETS);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const toggleOutlet = useCallback((id: number) => {
-    setOutlets((prev) =>
-      prev.map((outlet) => {
-        if (outlet.id !== id) {
-          return outlet;
-        }
-
-        const nextIsOn = !outlet.isOn;
-        const nextTimer = outlet.timer
-          ? { ...outlet.timer, isActive: nextIsOn ? outlet.timer.isActive : false }
-          : null;
-        const toggleLog: OutletLogEntry = {
-          id: createId(),
-          timestamp: new Date().toISOString(),
-          action: nextIsOn ? "Outlet turned on" : "Outlet turned off",
-          detail: "Manual toggle via app",
-          category: "power",
-        };
-
-        return {
-          ...outlet,
-          isOn: nextIsOn,
-          status: nextIsOn ? "Connected" : "Disconnected",
-          connection: nextIsOn ? "Connected" : "Disconnected",
-          powerDraw: nextIsOn ? outlet.power : 0,
-          duration: nextIsOn ? outlet.runtime : null,
-          timer: nextTimer,
-          logs: [toggleLog, ...outlet.logs],
-        };
-      })
-    );
+  // Fetch outlets from backend
+  const refreshOutlets = useCallback(async () => {
+    try {
+      const data = await api.getOutlets();
+      const transformedOutlets = data.map(transformOutlet);
+      setOutlets(transformedOutlets);
+    } catch (error) {
+      console.error('Failed to fetch outlets:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  // Load outlets on mount
+  useEffect(() => {
+    refreshOutlets();
+  }, [refreshOutlets]);
+
+  // Poll for updates every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshOutlets();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [refreshOutlets]);
+
+  const toggleOutlet = useCallback(async (id: number) => {
+    const outlet = outlets.find((o) => o.id === id);
+    if (!outlet) return;
+
+    const newState = !outlet.isOn;
+
+    // Optimistically update UI
+    setOutlets((prev) =>
+      prev.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              isOn: newState,
+              status: newState ? "Connected" : "Disconnected",
+              connection: newState ? "Connected" : "Disconnected",
+              powerDraw: newState ? o.power : 0,
+              duration: newState ? o.runtime : null,
+            }
+          : o
+      )
+    );
+
+    try {
+      // Send update to backend
+      await api.updateOutletState(id, newState);
+    } catch (error) {
+      console.error('Failed to toggle outlet:', error);
+      // Revert on error
+      await refreshOutlets();
+    }
+  }, [outlets, refreshOutlets]);
 
   const updateOutlet = useCallback((id: number, updates: Partial<Outlet>) => {
     setOutlets((prev) =>
@@ -186,14 +118,30 @@ export function OutletProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const renameOutlet = useCallback(async (id: number, name: string) => {
+    // Optimistically update UI
+    setOutlets((prev) =>
+      prev.map((o) => (o.id === id ? { ...o, name } : o))
+    );
+
+    try {
+      // Send update to backend
+      await api.updateOutletName(id, name);
+    } catch (error) {
+      console.error('Failed to rename outlet:', error);
+      // Revert on error
+      await refreshOutlets();
+    }
+  }, [refreshOutlets]);
+
   const getOutletById = useCallback(
     (id: number) => outlets.find((outlet) => outlet.id === id),
     [outlets]
   );
 
   const value = useMemo(
-    () => ({ outlets, toggleOutlet, updateOutlet, getOutletById }),
-    [outlets, toggleOutlet, updateOutlet, getOutletById]
+    () => ({ outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading }),
+    [outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading]
   );
 
   return <OutletContext.Provider value={value}>{children}</OutletContext.Provider>;

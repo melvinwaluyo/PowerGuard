@@ -1,18 +1,110 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Alert, Platform, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import * as Location from "expo-location";
 import { WebView } from "react-native-webview";
 
-export function MobileMap() {
+interface MobileMapProps {
+  location: { latitude: number; longitude: number } | null;
+  onLocationChange: (location: { latitude: number; longitude: number }) => void;
+  radius: number; // in meters
+}
+
+export function MobileMap({ location: propLocation, onLocationChange, radius }: MobileMapProps) {
   const router = useRouter();
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
+  const [displayInfo, setDisplayInfo] = useState<{
     address: string;
     city: string;
   } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const lastFetchedLocation = useRef<{ latitude: number; longitude: number } | null>(null);
+
+  // Use prop location, not internal state
+  const location = propLocation;
+
+  // Fetch address name when location changes
+  useEffect(() => {
+    if (location) {
+      // Check if this is a new location or if we need to refetch
+      const isNewLocation = !lastFetchedLocation.current ||
+        lastFetchedLocation.current.latitude !== location.latitude ||
+        lastFetchedLocation.current.longitude !== location.longitude;
+
+      if (isNewLocation) {
+        lastFetchedLocation.current = location;
+        fetchAddressForLocation(location.latitude, location.longitude);
+      }
+    } else {
+      // Clear display info when location is null
+      setDisplayInfo(null);
+      lastFetchedLocation.current = null;
+    }
+  }, [location]);
+
+  const fetchAddressForLocation = async (latitude: number, longitude: number) => {
+    try {
+      if (Platform.OS === 'web') {
+        // For web, just show coordinates
+        setDisplayInfo({
+          address: `Lat: ${latitude.toFixed(6)}`,
+          city: `Lng: ${longitude.toFixed(6)}`,
+        });
+      } else {
+        // For native, use reverse geocoding
+        try {
+          const [geocode] = await Location.reverseGeocodeAsync({
+            latitude,
+            longitude,
+          });
+
+          // Build address intelligently based on available data
+          let address = '';
+          let city = '';
+
+          // Try to build street address
+          if (geocode.street) {
+            address = `${geocode.streetNumber || ''} ${geocode.street}`.trim();
+          } else if (geocode.name) {
+            // If no street, use place name
+            address = geocode.name;
+          } else if (geocode.district || geocode.subregion) {
+            // If no street or name, use district/subregion
+            address = geocode.district || geocode.subregion || '';
+          }
+
+          // Build city line
+          const cityParts = [geocode.city, geocode.region, geocode.postalCode].filter(Boolean);
+          city = cityParts.join(', ');
+
+          // If we have no useful address info, fall back to coordinates
+          if (!address && !city) {
+            setDisplayInfo({
+              address: `Lat: ${latitude.toFixed(6)}`,
+              city: `Lng: ${longitude.toFixed(6)}`,
+            });
+          } else {
+            setDisplayInfo({
+              address: address || city || `Lat: ${latitude.toFixed(6)}`,
+              city: address ? city : `Lng: ${longitude.toFixed(6)}`,
+            });
+          }
+        } catch (geocodeError) {
+          // Fallback to coordinates if geocoding fails
+          setDisplayInfo({
+            address: `Lat: ${latitude.toFixed(6)}`,
+            city: `Lng: ${longitude.toFixed(6)}`,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching address:', error);
+      // Fallback to coordinates on error
+      setDisplayInfo({
+        address: `Lat: ${latitude.toFixed(6)}`,
+        city: `Lng: ${longitude.toFixed(6)}`,
+      });
+    }
+  };
 
   const getCurrentLocation = async () => {
     try {
@@ -34,39 +126,14 @@ export function MobileMap() {
         accuracy: Location.Accuracy.Balanced,
       });
 
-      // Reverse geocode to get address (not available on web in SDK 49+)
-      if (Platform.OS === 'web') {
-        // For web, just show coordinates
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          address: `Lat: ${position.coords.latitude.toFixed(6)}`,
-          city: `Lng: ${position.coords.longitude.toFixed(6)}`,
-        });
-      } else {
-        // For native, use reverse geocoding
-        try {
-          const [geocode] = await Location.reverseGeocodeAsync({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
+      // Call parent callback with new location
+      onLocationChange({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
 
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            address: `${geocode.streetNumber || ''} ${geocode.street || 'Unknown Street'}`.trim(),
-            city: `${geocode.city || ''}, ${geocode.region || ''}, ${geocode.postalCode || ''}`,
-          });
-        } catch (geocodeError) {
-          // Fallback to coordinates if geocoding fails
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            address: `Lat: ${position.coords.latitude.toFixed(6)}`,
-            city: `Lng: ${position.coords.longitude.toFixed(6)}`,
-          });
-        }
-      }
+      // Fetch address for the new location
+      await fetchAddressForLocation(position.coords.latitude, position.coords.longitude);
 
       setIsLoadingLocation(false);
     } catch (error) {
@@ -81,19 +148,23 @@ export function MobileMap() {
   };
 
   const handleMapPress = () => {
-    // Navigate to manual pin location screen with current location
+    // Navigate to manual pin location screen with current location and radius
     if (location) {
       router.push({
         pathname: "/pin-location",
         params: {
           latitude: location.latitude.toString(),
           longitude: location.longitude.toString(),
-          address: location.address,
-          city: location.city,
+          radius: radius.toString(),
         },
       });
     } else {
-      router.push("/pin-location");
+      router.push({
+        pathname: "/pin-location",
+        params: {
+          radius: radius.toString(),
+        },
+      });
     }
   };
 
@@ -128,7 +199,7 @@ export function MobileMap() {
 
   // Render map preview using Leaflet for web, static map for mobile
   if (Platform.OS === "web") {
-    const { MapContainer, TileLayer, Marker } = require("react-leaflet");
+    const { MapContainer, TileLayer, Marker, Circle } = require("react-leaflet");
     const L = require("leaflet");
     require("leaflet/dist/leaflet.css");
 
@@ -159,6 +230,16 @@ export function MobileMap() {
             touchZoom={false}
           >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Circle
+              center={[location.latitude, location.longitude]}
+              radius={radius}
+              pathOptions={{
+                color: '#0F0E41',
+                fillColor: '#0F0E41',
+                fillOpacity: 0.1,
+                weight: 2,
+              }}
+            />
             <Marker position={[location.latitude, location.longitude]} />
           </MapContainer>
 
@@ -187,10 +268,10 @@ export function MobileMap() {
             </View>
             <View className="flex-1">
               <Text className="text-[#0F0E41] font-semibold text-xs leading-4">
-                {location.address}
+                {displayInfo?.address || 'Loading...'}
               </Text>
               <Text className="text-[#6B7280] text-xs mt-0.5">
-                {location.city}
+                {displayInfo?.city || ''}
               </Text>
             </View>
           </View>
@@ -206,7 +287,7 @@ export function MobileMap() {
               <Text className="text-white text-xs">📍</Text>
             </View>
             <Text className="text-white font-semibold text-xs">
-              {isLoadingLocation ? "Updating..." : "Update Location"}
+              {isLoadingLocation ? "Getting Location..." : "Get Current Location"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -240,6 +321,15 @@ export function MobileMap() {
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Add circle to show geofence radius
+        L.circle([${location.latitude}, ${location.longitude}], {
+          color: '#0F0E41',
+          fillColor: '#0F0E41',
+          fillOpacity: 0.1,
+          radius: ${radius},
+          weight: 2
         }).addTo(map);
 
         var redIcon = L.icon({
@@ -297,10 +387,10 @@ export function MobileMap() {
           </View>
           <View className="flex-1">
             <Text className="text-[#0F0E41] font-semibold text-xs leading-4">
-              {location.address}
+              {displayInfo?.address || 'Loading...'}
             </Text>
             <Text className="text-[#6B7280] text-xs mt-0.5">
-              {location.city}
+              {displayInfo?.city || ''}
             </Text>
           </View>
         </View>
@@ -316,7 +406,7 @@ export function MobileMap() {
             <Text className="text-white text-xs">📍</Text>
           </View>
           <Text className="text-white font-semibold text-xs">
-            {isLoadingLocation ? "Updating..." : "Update Location"}
+            {isLoadingLocation ? "Getting Location..." : "Get Current Location"}
           </Text>
         </TouchableOpacity>
       </View>

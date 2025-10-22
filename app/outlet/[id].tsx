@@ -1,7 +1,7 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { ScrollView, Switch, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomNavigation } from "@/components/BottomNavigation";
@@ -40,12 +40,14 @@ export default function OutletDetailsScreen() {
   const outletIdParam = Array.isArray(id) ? id[0] : id;
   const outletId = useMemo(() => Number(outletIdParam), [outletIdParam]);
 
-  const { getOutletById, toggleOutlet, updateOutlet } = useOutlets();
+  const { getOutletById, toggleOutlet, updateOutlet, renameOutlet } = useOutlets();
   const outlet = Number.isFinite(outletId)
     ? getOutletById(outletId)
     : undefined;
 
   const [activeTab, setActiveTab] = useState<DetailTab>("status");
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [newName, setNewName] = useState("");
 
   const handleToggleTimer = () => {
     if (!outlet || !outlet.isOn) {
@@ -73,6 +75,26 @@ export default function OutletDetailsScreen() {
         isActive: false,
       },
     });
+  };
+
+  const handleOpenRenameModal = () => {
+    if (!outlet) return;
+    setNewName(outlet.name);
+    setRenameModalVisible(true);
+  };
+
+  const handleRename = async () => {
+    if (!outlet || !newName.trim()) {
+      Alert.alert("Error", "Please enter a valid name");
+      return;
+    }
+
+    try {
+      await renameOutlet(outlet.id, newName.trim());
+      setRenameModalVisible(false);
+    } catch (error) {
+      Alert.alert("Error", "Failed to rename outlet");
+    }
   };
 
   if (!outlet) {
@@ -129,6 +151,7 @@ export default function OutletDetailsScreen() {
             <TouchableOpacity
               className="w-11 h-11 items-center justify-center rounded-full border border-[#D9DBF2] bg-white"
               activeOpacity={0.8}
+              onPress={handleOpenRenameModal}
             >
               <Feather name="edit-3" size={18} color="#0F0E41" />
             </TouchableOpacity>
@@ -187,6 +210,53 @@ export default function OutletDetailsScreen() {
       </ScrollView>
 
       <BottomNavigation />
+
+      {/* Rename Modal */}
+      <Modal
+        visible={renameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRenameModalVisible(false)}
+      >
+        <View className="flex-1 items-center justify-center bg-black/50 px-6">
+          <View className="w-full max-w-sm rounded-[28px] bg-white p-6">
+            <Text className="text-[20px] font-semibold text-[#0F0E41] mb-4">
+              Rename Outlet
+            </Text>
+
+            <TextInput
+              className="rounded-2xl bg-[#F3F4FA] px-4 py-3 text-[15px] text-[#0F0E41] mb-6"
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Enter outlet name"
+              placeholderTextColor="#9AA0B8"
+              autoFocus
+            />
+
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                className="flex-1 rounded-full border border-[#0F0E41] bg-white px-6 py-3.5"
+                onPress={() => setRenameModalVisible(false)}
+                activeOpacity={0.8}
+              >
+                <Text className="text-[14px] font-semibold text-[#0F0E41] text-center">
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className="flex-1 rounded-full bg-[#0F0E41] px-6 py-3.5"
+                onPress={handleRename}
+                activeOpacity={0.9}
+              >
+                <Text className="text-[14px] font-semibold text-white text-center">
+                  Save
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

@@ -12,6 +12,7 @@ A cross-platform mobile application built with Expo and React Native that enable
 
 ## Tech Stack
 
+### Frontend
 - **Framework**: Expo ~54.0.9
 - **Language**: TypeScript
 - **UI**: React Native with NativeWind (Tailwind CSS)
@@ -19,6 +20,74 @@ A cross-platform mobile application built with Expo and React Native that enable
 - **Charts**: Recharts
 - **Maps**: React Native Maps & Leaflet
 - **Platforms**: iOS, Android, Web
+
+### Backend
+- **Framework**: NestJS
+- **Language**: TypeScript
+- **Database**: PostgreSQL (Azure)
+- **ORM**: Prisma
+- **MQTT**: HiveMQ Cloud
+- **Protocol**: MQTT over TLS
+
+## Project Structure
+
+This is a monorepo containing both frontend and backend:
+
+```
+PowerGuard/
+├── app/              # Frontend: Expo Router screens
+├── components/       # Frontend: React components
+├── services/         # Frontend: API client
+├── backend/          # Backend: NestJS API server
+│   ├── src/          # Backend source code
+│   ├── prisma/       # Database schema
+│   └── README.md     # Backend documentation
+├── docs/             # Project documentation and diagrams
+├── assets/           # Shared assets
+└── README.md         # This file
+```
+
+## System Architecture
+
+### System Overview
+![System Architecture](docs/Diagram/General.png)
+
+The PowerGuard system consists of three main components:
+1. **Mobile Application** (React Native + Expo) - User interface for monitoring and control
+2. **Backend API** (NestJS + PostgreSQL) - Manages data and business logic
+3. **STM32 Device** - Hardware controller connected via MQTT
+
+### System Layer Architecture
+![Layer Architecture](docs/Diagram/SystemLayerArchitecture.png)
+
+### Database Schema
+![Entity Relationship Diagram](docs/Diagram/ERD.png)
+
+### Use Cases
+![Use Case Diagram](docs/Diagram/UseCase.png)
+
+### Key Features
+
+#### Geofencing Automation
+![Geofencing Activity](docs/Diagram/Activity%20Diagram/Penggunaan%20Geofencing.drawio.png)
+
+#### Real-time Monitoring
+![Real-time Monitoring](docs/Diagram/Activity%20Diagram/Pemantauan%20Real%20Time%20dan%20Riwayat.drawio.drawio.png)
+
+#### Remote Control
+![Remote Control](docs/Diagram/Activity%20Diagram/Mengontrol%20Outlet%20menggunakan%20Aplikasi.drawio.drawio.png)
+
+<details>
+<summary>View More Activity Diagrams</summary>
+
+#### Timer Activation
+![Timer Activation](docs/Diagram/Activity%20Diagram/Mengaktifkan%20Timer%20untuk%20Outlet.drawio.drawio.drawio.png)
+
+#### Manual Control with Push Button
+![Push Button On](docs/Diagram/Activity%20Diagram/Mengaktifkan%20Outlet%20dengan%20Push%20Button.drawio.drawio.drawio.png)
+![Push Button Off](docs/Diagram/Activity%20Diagram/Menonaktifkan%20Outlet%20dengan%20Push%20Button.drawio.drawio.drawio.drawio.png)
+
+</details>
 
 ## Getting Started
 
@@ -38,14 +107,31 @@ git clone <repository-url>
 cd PowerGuard
 ```
 
-2. Install dependencies
+2. Install frontend dependencies
 ```bash
 npm install
 ```
 
-3. Start the development server
+3. Install backend dependencies
 ```bash
-npx expo start
+cd backend
+npm install
+cd ..
+```
+
+4. Configure backend environment (see `backend/.env.example`)
+
+5. Start the development servers
+
+**Terminal 1 - Backend:**
+```bash
+cd backend
+npm run start:dev
+```
+
+**Terminal 2 - Frontend:**
+```bash
+npm start
 ```
 
 ### Running the App
@@ -95,7 +181,16 @@ The app requires the following permissions:
 
 ## Building
 
+### Frontend
 This project uses EAS (Expo Application Services) for building and deployment. Configuration can be found in `eas.json`.
+
+```bash
+# Build for iOS
+eas build --platform ios
+
+# Build for Android
+eas build --platform android
+```
 
 ## Team
 

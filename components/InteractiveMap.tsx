@@ -1,6 +1,21 @@
 import { MobileMap } from "./MobileMap";
 
-export default function InteractiveMap() {
-  // Use the same MobileMap component for both web and mobile for consistency
-  return <MobileMap />;
+interface InteractiveMapProps {
+  location: { latitude: number; longitude: number } | null;
+  onLocationChange: (location: { latitude: number; longitude: number }) => void;
+  radius: number;
+}
+
+export default function InteractiveMap({
+  location,
+  onLocationChange,
+  radius,
+}: InteractiveMapProps) {
+  return (
+    <MobileMap
+      location={location}
+      onLocationChange={onLocationChange}
+      radius={radius}
+    />
+  );
 }

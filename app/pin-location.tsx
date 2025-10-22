@@ -4,6 +4,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { WebView } from "react-native-webview";
+import { useLocation } from "@/context/LocationContext";
 
 const BASE_TOP_PADDING = 16;
 
@@ -11,16 +12,19 @@ export default function PinLocationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const webViewRef = useRef<WebView>(null);
+  const { setPendingLocation } = useLocation();
 
   // Initialize with params if available, otherwise null (will auto-fetch)
+  const hasInitialLocation = !!(params.latitude && params.longitude);
   const [selectedLocation, setSelectedLocation] = useState({
     latitude: params.latitude ? parseFloat(params.latitude as string) : 0,
     longitude: params.longitude ? parseFloat(params.longitude as string) : 0,
     address: (params.address as string) || "",
     city: (params.city as string) || "",
   });
+  const [radius, setRadius] = useState(params.radius ? parseFloat(params.radius as string) : 1500);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(!!params.latitude);
+  const [isInitialized, setIsInitialized] = useState(hasInitialLocation);
 
   const topInset =
     (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0) +
@@ -69,7 +73,13 @@ export default function PinLocationScreen() {
   };
 
   const handleSaveLocation = () => {
-    // Save location logic here
+    // Set the pending location in context
+    setPendingLocation({
+      latitude: selectedLocation.latitude,
+      longitude: selectedLocation.longitude,
+    });
+
+    // Navigate back to dismiss the modal properly
     router.back();
   };
 
@@ -108,16 +118,20 @@ export default function PinLocationScreen() {
     }
   };
 
-  // Auto-fetch current location on mount if no params provided
+  // Auto-fetch current location on mount ONLY if no location was provided in params
   useEffect(() => {
-    if (!isInitialized) {
+    if (!hasInitialLocation) {
       handleMyLocation();
+    } else if (hasInitialLocation && !selectedLocation.address) {
+      // If we have initial coordinates but no address, fetch it
+      handleLocationChange(selectedLocation.latitude, selectedLocation.longitude);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (Platform.OS === "web") {
     // Web: Use react-leaflet for interactive map
-    const { MapContainer, TileLayer, Marker, useMapEvents } = require("react-leaflet");
+    const { MapContainer, TileLayer, Marker, Circle, useMapEvents } = require("react-leaflet");
     const L = require("leaflet");
     require("leaflet/dist/leaflet.css");
 
@@ -139,10 +153,22 @@ export default function PinLocationScreen() {
       });
 
       return (
-        <Marker
-          position={[selectedLocation.latitude, selectedLocation.longitude]}
-          icon={redIcon}
-        />
+        <>
+          <Circle
+            center={[selectedLocation.latitude, selectedLocation.longitude]}
+            radius={radius}
+            pathOptions={{
+              color: '#0F0E41',
+              fillColor: '#0F0E41',
+              fillOpacity: 0.1,
+              weight: 2,
+            }}
+          />
+          <Marker
+            position={[selectedLocation.latitude, selectedLocation.longitude]}
+            icon={redIcon}
+          />
+        </>
       );
     }
 
@@ -255,6 +281,16 @@ export default function PinLocationScreen() {
           attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
+        // Add circle to show geofence radius
+        var circle = L.circle([${selectedLocation.latitude}, ${selectedLocation.longitude}], {
+          color: '#0F0E41',
+          fillColor: '#0F0E41',
+          fillOpacity: 0.1,
+          radius: ${radius},
+          weight: 2
+        }).addTo(map);
+        window.circle = circle;
+
         // Custom red marker icon
         var redIcon = L.icon({
           iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
@@ -271,6 +307,7 @@ export default function PinLocationScreen() {
 
         // Handle map clicks
         map.on('click', function(e) {
+          circle.setLatLng(e.latlng);
           marker.setLatLng(e.latlng);
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'locationChange',

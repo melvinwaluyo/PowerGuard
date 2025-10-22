@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PowerStrip {
+  powerstripID     Int               @id @default(autoincrement()) @map("powerstripid")
+  name             String?
+  macAddress       Float?            @map("mac_address")
+  geofenceSettings GeofenceSetting[]
+  outlets          Outlet[]
+
+  @@map("powerstrip")
+}
+
+model Outlet {
+  outletID      Int               @id @default(autoincrement()) @map("outletid")
+  powerstripID  Int?              @map("powerstripid")
+  index         Int?
+  name          String?
+  state         Boolean?
+  timer         Int?
+  runtime       Int?
+  notifications NotificationLog[]
+  powerStrip    PowerStrip?       @relation(fields: [powerstripID], references: [powerstripID], onDelete: Cascade, onUpdate: NoAction)
+  usageLogs     UsageLog[]
+
+  @@map("outlet")
+}
+
+model UsageLog {
+  usageID   Int       @id @default(autoincrement()) @map("usageid")
+  outletID  Int?      @map("outletid")
+  current   Float?    @db.Real
+  power     Float?    @db.Real
+  energy    Float?    @db.Real
+  createdAt DateTime? @default(now()) @map("createdat") @db.Timestamp(6)
+  outlet    Outlet?   @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([outletID, createdAt])
+  @@index([createdAt])
+  @@map("usagelog")
+}
+
+model NotificationLog {
+  notificationID Int       @id @default(autoincrement()) @map("notificationid")
+  outletID       Int?      @map("outletid")
+  message        String?
+  createdAt      DateTime? @default(now()) @map("createdat") @db.Timestamp(6)
+  outlet         Outlet?   @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("notificationlog")
+}
+
+model GeofenceSetting {
+  settingID        Int         @id @default(autoincrement()) @map("settingid")
+  powerstripID     Int?        @map("powerstripid")
+  isEnabled        Boolean?    @map("isenabled")
+  latitude         Float?
+  longitude        Float?
+  radius           Int?
+  autoShutdownTime Int?        @map("autoshutdowntime")
+  powerStrip       PowerStrip? @relation(fields: [powerstripID], references: [powerstripID], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("geofencesetting")
+}

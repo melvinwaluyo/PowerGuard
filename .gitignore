@@ -43,3 +43,9 @@ app-example
 /android
 
 .claude/
+
+# Backend
+backend/dist/
+backend/.env
+backend/generated/
+backend/node_modules/

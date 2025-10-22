@@ -5,33 +5,44 @@ import { Text, TouchableOpacity, View } from "react-native";
 interface GeofencingSectionProps {
   enabled: boolean;
   onToggle: (enabled: boolean) => void;
+  radius: number;
+  onRadiusChange: (radius: number) => void;
 }
 
-export default function GeofencingSection({ enabled, onToggle }: GeofencingSectionProps) {
-  const [currentRadius, setCurrentRadius] = useState(1500);
-  const [draftRadius, setDraftRadius] = useState(1500);
+export default function GeofencingSection({
+  enabled,
+  onToggle,
+  radius,
+  onRadiusChange,
+}: GeofencingSectionProps) {
+  const [draftRadius, setDraftRadius] = useState(radius);
   const [isEditing, setIsEditing] = useState(false);
+
+  // Update draft when prop changes
+  useEffect(() => {
+    setDraftRadius(radius);
+  }, [radius]);
 
   // Reset editing state when geofencing is disabled
   useEffect(() => {
     if (!enabled && isEditing) {
       setIsEditing(false);
-      setDraftRadius(currentRadius);
+      setDraftRadius(radius);
     }
-  }, [enabled, isEditing, currentRadius]);
+  }, [enabled, isEditing, radius]);
 
   const handleEdit = () => {
-    setDraftRadius(currentRadius);
+    setDraftRadius(radius);
     setIsEditing(true);
   };
 
   const handleSave = () => {
-    setCurrentRadius(draftRadius);
+    onRadiusChange(draftRadius);
     setIsEditing(false);
   };
 
   const handleCancel = () => {
-    setDraftRadius(currentRadius);
+    setDraftRadius(radius);
     setIsEditing(false);
   };
 
@@ -77,7 +88,7 @@ export default function GeofencingSection({ enabled, onToggle }: GeofencingSecti
             <View className="items-center">
               <View className="bg-[#E8EBFF] rounded-2xl p-5 w-full items-center mb-4">
                 <Text className="text-xs text-[#6B7280] mb-1">Current Radius</Text>
-                <Text className="text-[36px] font-bold text-[#0F0E41]">{currentRadius} m</Text>
+                <Text className="text-[36px] font-bold text-[#0F0E41]">{radius} m</Text>
               </View>
               <TouchableOpacity
                 className="bg-[#0F0E41] rounded-xl px-8 py-3"
