@@ -19,15 +19,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const username = this.configService.get<string>('MQTT_USERNAME');
     const password = this.configService.get<string>('MQTT_PASSWORD');
 
-    this.client = mqtt.connect(`mqtts://${server}:${port}`, {
+    this.client = mqtt.connect(`mqtt://${server}:${port}`, {
       username,
       password,
-      protocol: 'mqtts',
-      rejectUnauthorized: true,
     });
 
     this.client.on('connect', () => {
-      console.log('Connected to HiveMQ MQTT broker');
+      console.log('Connected to EMQX MQTT broker');
       // Subscribe to power data topics
       this.client.subscribe('powerguard/+/data', (err) => {
         if (err) {
@@ -50,7 +48,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy() {
     if (this.client) {
       this.client.end();
-      console.log('Disconnected from HiveMQ MQTT broker');
+      console.log('Disconnected from EMQX MQTT broker');
     }
   }
 
