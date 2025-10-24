@@ -2,11 +2,18 @@ import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe } from '@nestjs
 import { ApiTags, ApiOperation, ApiParam, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { GeofenceService } from './geofence.service';
 import type { GeofenceSettingDto } from './geofence.service';
+import { GeofenceAutomationService } from './geofence-automation.service';
+import { ReportLocationDto } from './dto/report-location.dto';
+import { AutoShutdownService } from './auto-shutdown.service';
 
 @ApiTags('geofence')
 @Controller('geofence')
 export class GeofenceController {
-  constructor(private readonly geofenceService: GeofenceService) {}
+  constructor(
+    private readonly geofenceService: GeofenceService,
+    private readonly geofenceAutomationService: GeofenceAutomationService,
+    private readonly autoShutdownService: AutoShutdownService,
+  ) {}
 
   @Get('powerstrip/:id')
   @ApiOperation({ summary: 'Get geofence settings for a power strip' })
@@ -58,5 +65,39 @@ export class GeofenceController {
     @Body('isEnabled') isEnabled: boolean,
   ) {
     return this.geofenceService.updateEnabled(id, isEnabled);
+  }
+
+  @Post('powerstrip/:id/report')
+  @ApiOperation({ summary: 'Laporkan lokasi terbaru untuk evaluasi geofence' })
+  @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
+  @ApiBody({ type: ReportLocationDto })
+  @ApiResponse({ status: 200, description: 'Status geofence terkini' })
+  reportLocation(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() payload: ReportLocationDto,
+  ) {
+    return this.geofenceAutomationService.evaluateLocation(id, payload);
+  }
+
+  @Get('powerstrip/:id/auto-shutdown/pending')
+  @ApiOperation({ summary: 'Daftar permintaan auto shutdown yang belum diproses' })
+  @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
+  @ApiResponse({ status: 200, description: 'Daftar permintaan pending' })
+  pendingRequests(@Param('id', ParseIntPipe) id: number) {
+    return this.autoShutdownService.getPendingRequests(id);
+  }
+
+  @Post('auto-shutdown/:requestId/confirm')
+  @ApiOperation({ summary: 'Konfirmasi auto shutdown dan matikan outlet' })
+  @ApiResponse({ status: 200, description: 'Auto shutdown dikonfirmasi' })
+  confirmAutoShutdown(@Param('requestId', ParseIntPipe) requestId: number) {
+    return this.autoShutdownService.confirm(requestId);
+  }
+
+  @Post('auto-shutdown/:requestId/cancel')
+  @ApiOperation({ summary: 'Batalkan auto shutdown, biarkan outlet tetap menyala' })
+  @ApiResponse({ status: 200, description: 'Auto shutdown dibatalkan' })
+  cancelAutoShutdown(@Param('requestId', ParseIntPipe) requestId: number) {
+    return this.autoShutdownService.cancel(requestId);
   }
 }

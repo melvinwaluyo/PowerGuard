@@ -6,28 +6,28 @@ import PinLocationSection from "@/components/PinLocationSection";
 import { Platform, ScrollView, StatusBar, Text, View, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocation } from "@/context/LocationContext";
-import { api, GeofenceSetting } from "@/services/api";
-
-// Default powerstrip ID - TODO: Make this dynamic based on user's powerstrip
-const DEFAULT_POWERSTRIP_ID = 1;
+import { useGeofenceMonitor, DEFAULT_POWERSTRIP_ID } from "@/context/GeofenceMonitorContext";
+import { api } from "@/services/api";
 
 export default function SettingsScreen() {
   const { pendingLocation, setPendingLocation } = useLocation();
-  const [geofencingEnabled, setGeofencingEnabled] = useState(false);
-  const [radius, setRadius] = useState(1500);
-  const [autoShutdownTime, setAutoShutdownTime] = useState(900); // 15 minutes in seconds
-  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { settings, status, refreshSettings, updateSettingsLocal, pendingRequest, isResolvingRequest } =
+    useGeofenceMonitor();
+  const [isSaving, setIsSaving] = useState(false);
+  const isLoading = !settings;
+
   const insets = useSafeAreaInsets();
 
   const topInset = Platform.OS === "android"
     ? (StatusBar.currentHeight ?? 0) + 16
     : insets.top + 16;
 
-  // Load geofence settings on mount
-  useEffect(() => {
-    loadGeofenceSettings();
-  }, []);
+  const geofencingEnabled = settings?.isEnabled ?? false;
+  const radius = settings?.radius ?? 1500;
+  const autoShutdownTime = settings?.autoShutdownTime ?? 900;
+  const location = settings?.latitude != null && settings?.longitude != null
+    ? { latitude: settings.latitude, longitude: settings.longitude }
+    : null;
 
   // Handle location updates from pin-location screen via context
   useEffect(() => {
@@ -39,74 +39,78 @@ export default function SettingsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingLocation]);
 
-  const loadGeofenceSettings = async () => {
-    try {
-      setIsLoading(true);
-      const settings = await api.getGeofenceSetting(DEFAULT_POWERSTRIP_ID);
-      if (settings) {
-        setGeofencingEnabled(settings.isEnabled);
-        setRadius(settings.radius || 1500);
-        setAutoShutdownTime(settings.autoShutdownTime || 900);
-        if (settings.latitude && settings.longitude) {
-          setLocation({
-            latitude: settings.latitude,
-            longitude: settings.longitude,
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load geofence settings:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleToggleGeofencing = async (enabled: boolean) => {
+    if (!settings) return;
+    const previous = geofencingEnabled;
     try {
-      setGeofencingEnabled(enabled);
+      setIsSaving(true);
+      updateSettingsLocal({ isEnabled: enabled });
       await api.updateGeofenceEnabled(DEFAULT_POWERSTRIP_ID, enabled);
+      await refreshSettings();
     } catch (error) {
       console.error('Failed to update geofencing enabled:', error);
       // Revert on error
-      setGeofencingEnabled(!enabled);
+      updateSettingsLocal({ isEnabled: previous });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleRadiusChange = async (newRadius: number) => {
+    if (!settings) return;
+    const previous = radius;
     try {
-      setRadius(newRadius);
+      setIsSaving(true);
+      updateSettingsLocal({ radius: newRadius });
       await api.saveGeofenceSetting({
         powerstripID: DEFAULT_POWERSTRIP_ID,
         isEnabled: geofencingEnabled,
         radius: newRadius,
-        latitude: location?.latitude,
-        longitude: location?.longitude,
+        latitude: settings.latitude ?? location?.latitude,
+        longitude: settings.longitude ?? location?.longitude,
         autoShutdownTime,
       });
+      await refreshSettings();
     } catch (error) {
       console.error('Failed to save radius:', error);
+      updateSettingsLocal({ radius: previous });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleShutdownTimeChange = async (timeInSeconds: number) => {
+    if (!settings) return;
+    const previous = autoShutdownTime;
     try {
-      setAutoShutdownTime(timeInSeconds);
+      setIsSaving(true);
+      updateSettingsLocal({ autoShutdownTime: timeInSeconds });
       await api.saveGeofenceSetting({
         powerstripID: DEFAULT_POWERSTRIP_ID,
         isEnabled: geofencingEnabled,
         radius,
-        latitude: location?.latitude,
-        longitude: location?.longitude,
+        latitude: settings.latitude ?? location?.latitude,
+        longitude: settings.longitude ?? location?.longitude,
         autoShutdownTime: timeInSeconds,
       });
+      await refreshSettings();
     } catch (error) {
       console.error('Failed to save shutdown time:', error);
+      updateSettingsLocal({ autoShutdownTime: previous });
+      throw error;
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleLocationChange = async (newLocation: { latitude: number; longitude: number }) => {
+    if (!settings) return;
+    setIsSaving(true);
     try {
-      setLocation(newLocation);
+      updateSettingsLocal({
+        latitude: newLocation.latitude,
+        longitude: newLocation.longitude,
+      });
       await api.saveGeofenceSetting({
         powerstripID: DEFAULT_POWERSTRIP_ID,
         isEnabled: geofencingEnabled,
@@ -115,8 +119,11 @@ export default function SettingsScreen() {
         longitude: newLocation.longitude,
         autoShutdownTime,
       });
+      await refreshSettings();
     } catch (error) {
       console.error('Failed to save location:', error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -155,7 +162,12 @@ export default function SettingsScreen() {
           <>
             <AutoShutdownSection
               autoShutdownTime={autoShutdownTime}
+              countdownIsActive={status.countdownIsActive}
+              countdownRemainingSeconds={status.remainingSeconds}
+              geofenceZone={status.zone}
+              pendingRequest={pendingRequest}
               onShutdownTimeChange={handleShutdownTimeChange}
+              isSaving={isSaving || isResolvingRequest}
             />
             <PinLocationSection
               location={location}

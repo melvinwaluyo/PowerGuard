@@ -11,6 +11,7 @@ import {
 import { ApiTags, ApiOperation, ApiParam, ApiBody, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { OutletsService } from './outlets.service';
 import { MqttService } from '../mqtt/mqtt.service';
+import { TimerService } from '../timer/timer.service';
 
 @ApiTags('outlets')
 @Controller('outlets')
@@ -18,6 +19,7 @@ export class OutletsController {
   constructor(
     private readonly outletsService: OutletsService,
     private readonly mqttService: MqttService,
+    private readonly timerService: TimerService,
   ) {}
 
   @Get()
@@ -56,6 +58,7 @@ export class OutletsController {
   ) {
     // Update database and send MQTT command to STM32
     await this.mqttService.controlOutlet(id, state);
+    await this.timerService.handleOutletStateChange(id, state);
     return { success: true, outletId: id, state };
   }
 

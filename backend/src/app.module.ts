@@ -7,6 +7,7 @@ import { MqttModule } from './mqtt/mqtt.module';
 import { OutletsModule } from './outlets/outlets.module';
 import { PowerstripsModule } from './powerstrips/powerstrips.module';
 import { GeofenceModule } from './geofence/geofence.module';
+import { TimerModule } from './timer/timer.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { GeofenceModule } from './geofence/geofence.module';
     OutletsModule,
     PowerstripsModule,
     GeofenceModule,
+    TimerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

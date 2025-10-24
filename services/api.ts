@@ -43,6 +43,46 @@ export interface GeofenceSetting {
   longitude?: number;
   radius?: number;
   autoShutdownTime?: number; // in seconds
+  countdownIsActive?: boolean;
+  countdownEndsAt?: string | null;
+  countdownStartedAt?: string | null;
+  lastAutoShutdownAt?: string | null;
+  lastStatus?: string | null;
+}
+
+export interface TimerStatusResponse {
+  outletId: number;
+  isActive: boolean;
+  durationSeconds: number | null;
+  endsAt: string | null;
+  remainingSeconds: number;
+  source: string | null;
+}
+
+export interface TimerLogResponse {
+  timerLogID: number;
+  outletID: number;
+  status: string;
+  durationSeconds: number | null;
+  remainingSeconds: number | null;
+  note?: string | null;
+  triggeredAt: string;
+  source?: string | null;
+}
+
+export interface GeofenceEvaluationResponse {
+  zone: "INSIDE" | "OUTSIDE";
+  distanceMeters: number;
+  countdownIsActive: boolean;
+  countdownEndsAt: string | null;
+  autoShutdownSeconds: number | null;
+  triggeredOutlets: number[];
+  pendingRequest: {
+    requestId: number;
+    outletId: number;
+    initiatedAt: string;
+    expiresAt: string | null;
+  } | null;
 }
 
 class ApiService {
@@ -107,6 +147,58 @@ class ApiService {
       return await response.json();
     } catch (error) {
       console.error('Error updating geofence enabled:', error);
+      throw error;
+    }
+  }
+
+  async reportGeofenceLocation(
+    powerstripId: number,
+    payload: { latitude: number; longitude: number; accuracy?: number },
+  ): Promise<GeofenceEvaluationResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/geofence/powerstrip/${powerstripId}/report`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error reporting geofence location:', error);
+      throw error;
+    }
+  }
+
+  async confirmAutoShutdown(requestId: number) {
+    try {
+      const response = await fetch(`${this.baseUrl}/geofence/auto-shutdown/${requestId}/confirm`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error confirming auto shutdown:', error);
+      throw error;
+    }
+  }
+
+  async cancelAutoShutdown(requestId: number) {
+    try {
+      const response = await fetch(`${this.baseUrl}/geofence/auto-shutdown/${requestId}/cancel`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error cancelling auto shutdown:', error);
       throw error;
     }
   }
@@ -185,6 +277,86 @@ class ApiService {
       return await response.json();
     } catch (error) {
       console.error('Error updating outlet name:', error);
+      throw error;
+    }
+  }
+
+  // Timers
+  async getOutletTimerStatus(outletId: number): Promise<TimerStatusResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/outlets/${outletId}/timer`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching timer status:', error);
+      throw error;
+    }
+  }
+
+  async startOutletTimer(outletId: number, durationSeconds: number): Promise<TimerStatusResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/outlets/${outletId}/timer/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ durationSeconds }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error starting outlet timer:', error);
+      throw error;
+    }
+  }
+
+  async stopOutletTimer(outletId: number): Promise<TimerStatusResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/outlets/${outletId}/timer/stop`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error stopping outlet timer:', error);
+      throw error;
+    }
+  }
+
+  async updateOutletTimerPreset(outletId: number, durationSeconds: number): Promise<TimerStatusResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/outlets/${outletId}/timer/preset`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ durationSeconds }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error updating timer preset:', error);
+      throw error;
+    }
+  }
+
+  async getOutletTimerLogs(outletId: number, limit: number = 20): Promise<TimerLogResponse[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/outlets/${outletId}/timer/logs?limit=${limit}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching timer logs:', error);
       throw error;
     }
   }
