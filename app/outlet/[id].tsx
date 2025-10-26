@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BottomNavigation } from "@/components/BottomNavigation";
 import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { useOutlets } from "@/context/OutletContext";
 import { api, TimerLogResponse, TimerStatusResponse } from "@/services/api";
@@ -467,7 +466,7 @@ export default function OutletDetailsScreen() {
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: 28,
-          paddingBottom: 220,
+          paddingBottom: 40,
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -489,8 +488,6 @@ export default function OutletDetailsScreen() {
           <LogSection logs={timerLogs} />
         )}
       </ScrollView>
-
-      <BottomNavigation />
 
       {/* Rename Modal */}
       <Modal
