@@ -32,6 +32,7 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
 
 # typescript
 *.tsbuildinfo
@@ -49,3 +50,5 @@ backend/dist/
 backend/.env
 backend/generated/
 backend/node_modules/
+
+CLAUDE.md

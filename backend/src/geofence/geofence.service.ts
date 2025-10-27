@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { GeofenceZone } from '@prisma/client';
 
 export interface GeofenceSettingDto {
   powerstripID: number;
@@ -36,6 +37,14 @@ export class GeofenceService {
           longitude: data.longitude,
           radius: data.radius,
           autoShutdownTime: data.autoShutdownTime,
+          ...(data.isEnabled === false
+            ? {
+                countdownIsActive: false,
+                countdownStartedAt: null,
+                countdownEndsAt: null,
+                lastStatus: GeofenceZone.INSIDE,
+              }
+            : {}),
         },
       });
     } else {
@@ -51,6 +60,8 @@ export class GeofenceService {
           longitude: data.longitude,
           radius: data.radius,
           autoShutdownTime: data.autoShutdownTime,
+          lastStatus: GeofenceZone.INSIDE,
+          countdownIsActive: false,
         },
       });
     }
@@ -64,7 +75,17 @@ export class GeofenceService {
     if (existing) {
       return this.prisma.geofenceSetting.update({
         where: { settingID: existing.settingID },
-        data: { isEnabled },
+        data: {
+          isEnabled,
+          ...(isEnabled
+            ? { lastStatus: existing.lastStatus ?? GeofenceZone.INSIDE }
+            : {
+                countdownIsActive: false,
+                countdownStartedAt: null,
+                countdownEndsAt: null,
+                lastStatus: GeofenceZone.INSIDE,
+              }),
+        },
       });
     } else {
       // Ensure powerstrip exists, create if needed
@@ -77,6 +98,8 @@ export class GeofenceService {
           isEnabled,
           radius: 1500,
           autoShutdownTime: 900, // 15 minutes default
+          lastStatus: GeofenceZone.INSIDE,
+          countdownIsActive: false,
         },
       });
     }

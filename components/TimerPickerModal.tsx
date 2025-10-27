@@ -1,15 +1,15 @@
 import { useState, useEffect } from "react";
-import { Modal, Platform, StatusBar, Text, TouchableOpacity, View } from "react-native";
-import { BlurView } from "expo-blur";
-import { TimerPicker } from "./TimerPicker";
-import { OutletTimerSetting } from "@/types/outlet";
+import { Modal, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { TimerPicker } from "./TimerPicker";
+import { TimerDurationValue } from "@/types/timer";
 
 interface TimerPickerModalProps {
   visible: boolean;
-  value: OutletTimerSetting;
-  onConfirm: (value: OutletTimerSetting) => void;
+  value: TimerDurationValue;
+  onConfirm: (value: TimerDurationValue) => void | Promise<void>;
   onCancel: () => void;
+  isSaving?: boolean;
 }
 
 export function TimerPickerModal({
@@ -17,8 +17,9 @@ export function TimerPickerModal({
   value,
   onConfirm,
   onCancel,
+  isSaving = false,
 }: TimerPickerModalProps) {
-  const [currentValue, setCurrentValue] = useState<OutletTimerSetting>(value);
+  const [currentValue, setCurrentValue] = useState<TimerDurationValue>(value);
 
   // Update internal state when the value prop changes (modal opens with new value)
   useEffect(() => {
@@ -28,7 +29,10 @@ export function TimerPickerModal({
   }, [visible, value]);
 
   const handleConfirm = () => {
-    onConfirm(currentValue);
+    if (isSaving) {
+      return;
+    }
+    void onConfirm(currentValue);
   };
 
   return (
@@ -95,16 +99,18 @@ export function TimerPickerModal({
             <TouchableOpacity
               className="flex-1 bg-[#0F0E41] rounded-xl py-4 items-center"
               onPress={handleConfirm}
+              disabled={isSaving}
               style={{
                 elevation: 3,
                 shadowColor: '#000',
                 shadowOffset: { width: 0, height: 2 },
                 shadowOpacity: 0.15,
                 shadowRadius: 3,
+                opacity: isSaving ? 0.6 : 1,
               }}
             >
               <Text className="text-white font-semibold text-base">
-                Confirm
+                {isSaving ? "Saving..." : "Confirm"}
               </Text>
             </TouchableOpacity>
           </View>

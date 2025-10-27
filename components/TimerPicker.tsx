@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 
-import { OutletTimerSetting } from "@/types/outlet";
+import { TimerDurationValue } from "@/types/timer";
 
 const ITEM_HEIGHT = 44;
 const VISIBLE_ITEMS = 3;
@@ -24,8 +24,8 @@ interface PickerColumnProps {
 }
 
 interface TimerPickerProps {
-  value: OutletTimerSetting | null;
-  onChange: (value: OutletTimerSetting) => void;
+  value: TimerDurationValue | null;
+  onChange: (value: TimerDurationValue) => void;
 }
 
 function formatNumber(value: number) {
@@ -201,11 +201,10 @@ function PickerColumn({
   );
 }
 
-const FALLBACK_TIMER: OutletTimerSetting = {
+const FALLBACK_TIMER: TimerDurationValue = {
   hours: 0,
   minutes: 0,
   seconds: 0,
-  isActive: false,
 };
 
 export function TimerPicker({ value, onChange }: TimerPickerProps) {
@@ -218,7 +217,7 @@ export function TimerPicker({ value, onChange }: TimerPickerProps) {
   );
 
   const emitChange = useCallback(
-    (partial: Partial<OutletTimerSetting>) => {
+    (partial: Partial<TimerDurationValue>) => {
       onChange({ ...timerValue, ...partial });
     },
     [onChange, timerValue]

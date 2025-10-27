@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Outlet, OutletLogEntry } from "@/types/outlet";
+import { Outlet, TimerSource } from "@/types/outlet";
 import { api } from "@/services/api";
 
 interface OutletContextValue {
@@ -23,11 +23,36 @@ const formatRuntime = (seconds: number | null): string => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
 
+const DEFAULT_TIMER_SECONDS = 15 * 60;
+
+const buildTimerState = (backendOutlet: any) => {
+  const rawDuration = backendOutlet.timerDuration ?? DEFAULT_TIMER_SECONDS;
+  const presetSeconds = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : DEFAULT_TIMER_SECONDS;
+  const endsAtRaw = backendOutlet.timerEndsAt ? new Date(backendOutlet.timerEndsAt) : null;
+  const isActive = Boolean(backendOutlet.timerIsActive && endsAtRaw);
+  const remainingSeconds =
+    isActive && endsAtRaw
+      ? Math.max(0, Math.round((endsAtRaw.getTime() - Date.now()) / 1000))
+      : presetSeconds;
+
+  return {
+    timer: {
+      isActive,
+      durationSeconds: presetSeconds,
+      remainingSeconds,
+      endsAt: endsAtRaw ? endsAtRaw.toISOString() : null,
+      source: (backendOutlet.timerSource as TimerSource | null) ?? null,
+    },
+    presetSeconds,
+  };
+};
+
 // Helper function to transform backend outlet data to frontend Outlet type
 const transformOutlet = (backendOutlet: any): Outlet => {
   const latestUsage = backendOutlet.usageLogs?.[0];
   const power = latestUsage?.power || 0;
   const isOn = backendOutlet.state || false;
+  const { timer, presetSeconds } = buildTimerState(backendOutlet);
 
   return {
     id: backendOutlet.outletID,
@@ -39,12 +64,8 @@ const transformOutlet = (backendOutlet: any): Outlet => {
     runtime: formatRuntime(backendOutlet.runtime),
     powerDraw: isOn ? power : 0,
     connection: isOn ? "Connected" : "Disconnected",
-    timer: backendOutlet.timer ? {
-      hours: Math.floor(backendOutlet.timer / 3600),
-      minutes: Math.floor((backendOutlet.timer % 3600) / 60),
-      seconds: backendOutlet.timer % 60,
-      isActive: isOn,
-    } : null,
+    timer,
+    timerPresetSeconds: presetSeconds,
     logs: [], // Logs will be loaded separately in the detail view
   };
 };
@@ -97,6 +118,16 @@ export function OutletProvider({ children }: { children: ReactNode }) {
               connection: newState ? "Connected" : "Disconnected",
               powerDraw: newState ? o.power : 0,
               duration: newState ? o.runtime : null,
+              timer: o.timer
+                ? {
+                    ...o.timer,
+                    isActive: newState ? o.timer.isActive : false,
+                    remainingSeconds: newState
+                      ? o.timer.remainingSeconds
+                      : o.timer.durationSeconds,
+                    endsAt: newState ? o.timer.endsAt : null,
+                  }
+                : null,
             }
           : o
       )

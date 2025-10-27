@@ -33,7 +33,7 @@ export function BottomNavigation({ activeTab = "home" }: BottomNavigationProps) 
       >
         <TouchableOpacity
           className="items-center justify-center w-[56px] h-[56px]"
-          onPress={() => router.push("/reporting")}
+          onPress={() => router.replace("/reporting")}
         >
           {isReporting ? (
             <View className="w-[56px] h-[56px] rounded-full bg-white items-center justify-center">
@@ -46,7 +46,7 @@ export function BottomNavigation({ activeTab = "home" }: BottomNavigationProps) 
 
         <TouchableOpacity
           className="items-center justify-center w-[56px] h-[56px]"
-          onPress={() => router.push("/")}
+          onPress={() => router.replace("/")}
         >
           {isHome ? (
             <View className="w-[56px] h-[56px] rounded-full bg-white items-center justify-center">
@@ -59,7 +59,7 @@ export function BottomNavigation({ activeTab = "home" }: BottomNavigationProps) 
 
         <TouchableOpacity
           className="items-center justify-center w-[56px] h-[56px]"
-          onPress={() => router.push("/settings")}
+          onPress={() => router.replace("/settings")}
         >
           {isSettings ? (
             <View className="w-[56px] h-[56px] rounded-full bg-white items-center justify-center">

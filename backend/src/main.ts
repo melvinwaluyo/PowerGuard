@@ -29,6 +29,7 @@ async function bootstrap() {
     .addTag('geofence', 'Geofencing settings')
     .addTag('outlets', 'Outlet management and control')
     .addTag('powerstrips', 'Power strip devices')
+    .addTag('timer', 'Outlet timer scheduling and logs')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

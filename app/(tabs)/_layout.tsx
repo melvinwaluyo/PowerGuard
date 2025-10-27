@@ -1,35 +1,31 @@
-import { Stack } from "expo-router";
+import { Tabs } from "expo-router";
 
 export default function TabLayout() {
   return (
-    <Stack
+    <Tabs
       screenOptions={{
         headerShown: false,
-        animation: "fade",
-        animationDuration: 200,
+        tabBarStyle: { display: "none" }, // Hide default tab bar since we have custom BottomNavigation
       }}
     >
-      <Stack.Screen
+      <Tabs.Screen
         name="index"
         options={{
           title: "Home",
-          headerShown: false,
         }}
       />
-      <Stack.Screen
+      <Tabs.Screen
         name="reporting"
         options={{
           title: "Reporting",
-          headerShown: false,
         }}
       />
-      <Stack.Screen
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
-          headerShown: false,
         }}
       />
-    </Stack>
+    </Tabs>
   );
 }

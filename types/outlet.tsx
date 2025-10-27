@@ -2,6 +2,8 @@ export type OutletConnectionStatus = "Connected" | "Disconnected";
 
 export type OutletLogCategory = "power" | "automation" | "safety" | "maintenance";
 
+export type TimerSource = "MANUAL" | "GEOFENCE";
+
 export interface OutletLogEntry {
   id: string;
   timestamp: string;
@@ -10,11 +12,30 @@ export interface OutletLogEntry {
   category: OutletLogCategory;
 }
 
-export interface OutletTimerSetting {
-  hours: number;
-  minutes: number;
-  seconds: number;
+export type TimerLogStatus =
+  | "STARTED"
+  | "STOPPED"
+  | "COMPLETED"
+  | "AUTO_CANCELLED"
+  | "POWER_OFF"
+  | "REPLACED";
+
+export interface OutletTimerLog {
+  id: number;
+  status: TimerLogStatus;
+  durationSeconds: number | null;
+  remainingSeconds: number | null;
+  note?: string | null;
+  timestamp: string;
+  source?: TimerSource | null;
+}
+
+export interface OutletTimerState {
   isActive: boolean;
+  durationSeconds: number;
+  remainingSeconds: number;
+  endsAt: string | null;
+  source: TimerSource | null;
 }
 
 export interface Outlet {
@@ -27,6 +48,8 @@ export interface Outlet {
   runtime: string;
   powerDraw: number;
   connection: OutletConnectionStatus;
-  timer: OutletTimerSetting | null;
+  timer: OutletTimerState | null;
+  timerPresetSeconds: number;
   logs: OutletLogEntry[];
+  timerLogs?: OutletTimerLog[];
 }

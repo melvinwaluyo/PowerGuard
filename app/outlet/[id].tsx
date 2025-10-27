@@ -1,18 +1,21 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BottomNavigation } from "@/components/BottomNavigation";
 import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { useOutlets } from "@/context/OutletContext";
+import { api, TimerLogResponse, TimerStatusResponse } from "@/services/api";
 import {
   Outlet,
   OutletLogCategory,
   OutletLogEntry,
-  OutletTimerSetting,
+  OutletTimerState,
+  TimerLogStatus,
+  TimerSource,
 } from "@/types/outlet";
+import { TimerDurationValue } from "@/types/timer";
 
 const LOG_CATEGORY_META: Record<
   OutletLogCategory,
@@ -26,11 +29,83 @@ const LOG_CATEGORY_META: Record<
 
 type DetailTab = "status" | "log";
 
-const DEFAULT_TIMER: OutletTimerSetting = {
-  hours: 0,
-  minutes: 15,
-  seconds: 0,
-  isActive: false,
+const DEFAULT_TIMER_SECONDS = 15 * 60;
+
+const secondsToDuration = (seconds: number): TimerDurationValue => {
+  const total = Math.max(0, seconds);
+  return {
+    hours: Math.floor(total / 3600),
+    minutes: Math.floor((total % 3600) / 60),
+    seconds: total % 60,
+  };
+};
+
+const durationToSeconds = (duration: TimerDurationValue): number =>
+  duration.hours * 3600 + duration.minutes * 60 + duration.seconds;
+
+const formatSecondsAsClock = (seconds: number): string => {
+  const safeSeconds = Math.max(0, seconds);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const secs = safeSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+};
+
+const TIMER_STATUS_COPY: Record<TimerLogStatus, { action: string; detail: (log: any) => string }> = {
+  STARTED: {
+    action: "Timer dimulai",
+    detail: (log) => `Durasi ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
+  },
+  STOPPED: {
+    action: "Timer dihentikan",
+    detail: (log) => `Sisa ${formatSecondsAsClock(log.remainingSeconds ?? 0)}`,
+  },
+  COMPLETED: {
+    action: "Timer selesai",
+    detail: () => "Relay dimatikan otomatis",
+  },
+  AUTO_CANCELLED: {
+    action: "Timer dibatalkan otomatis",
+    detail: () => "Terjadi kendala saat mematikan relay",
+  },
+  POWER_OFF: {
+    action: "Power dimatikan",
+    detail: () => "Timer dihentikan karena outlet dimatikan",
+  },
+  REPLACED: {
+    action: "Timer diganti",
+    detail: (log) => `Durasi baru ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
+  },
+};
+
+const mapTimerLogToOutletLog = (log: TimerLogResponse): OutletLogEntry => {
+  const status = log.status as TimerLogStatus;
+  const meta = TIMER_STATUS_COPY[status];
+  const baseDetail = meta ? meta.detail(log) : "";
+  const sourceSuffix = log.source === "GEOFENCE" ? " (Geofence)" : "";
+  const detailParts = [];
+  if (baseDetail) {
+    detailParts.push(`${baseDetail}${sourceSuffix}`.trim());
+  }
+  if (log.note) {
+    detailParts.push(log.note);
+  }
+
+  return {
+    id: `timer-${log.timerLogID}`,
+    timestamp: log.triggeredAt,
+    action: meta ? meta.action : `Timer ${status.toLowerCase()}`,
+    detail: detailParts.join(" • "),
+    category: "power",
+  };
+};
+
+const parseIsoDate = (value?: string | null): Date | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 export default function OutletDetailsScreen() {
@@ -40,42 +115,242 @@ export default function OutletDetailsScreen() {
   const outletIdParam = Array.isArray(id) ? id[0] : id;
   const outletId = useMemo(() => Number(outletIdParam), [outletIdParam]);
 
-  const { getOutletById, toggleOutlet, updateOutlet, renameOutlet } = useOutlets();
-  const outlet = Number.isFinite(outletId)
-    ? getOutletById(outletId)
-    : undefined;
+  const { getOutletById, toggleOutlet, updateOutlet, renameOutlet, refreshOutlets } = useOutlets();
+  const outlet = Number.isFinite(outletId) ? getOutletById(outletId) : undefined;
 
   const [activeTab, setActiveTab] = useState<DetailTab>("status");
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [newName, setNewName] = useState("");
 
-  const handleToggleTimer = () => {
-    if (!outlet || !outlet.isOn) {
+  const [timerState, setTimerState] = useState<OutletTimerState | null>(outlet?.timer ?? null);
+  const [timerPresetSeconds, setTimerPresetSeconds] = useState(outlet?.timerPresetSeconds ?? DEFAULT_TIMER_SECONDS);
+  const [countdownSeconds, setCountdownSeconds] = useState(() => {
+    if (outlet?.timer?.isActive) {
+      return outlet.timer.remainingSeconds;
+    }
+    return outlet?.timerPresetSeconds ?? DEFAULT_TIMER_SECONDS;
+  });
+  const [timerLogs, setTimerLogs] = useState<OutletLogEntry[]>([]);
+  const [isTimerActionLoading, setTimerActionLoading] = useState(false);
+
+  useEffect(() => {
+    if (!outlet) return;
+    setTimerState(outlet.timer);
+    setTimerPresetSeconds(outlet.timerPresetSeconds ?? DEFAULT_TIMER_SECONDS);
+  }, [outlet?.timer, outlet?.timerPresetSeconds, outlet]);
+
+  const applyTimerStatus = useCallback(
+    (status: TimerStatusResponse) => {
+      const fallbackDuration =
+        status.durationSeconds && status.durationSeconds > 0
+          ? status.durationSeconds
+          : timerPresetSeconds || DEFAULT_TIMER_SECONDS;
+      const safeDuration = fallbackDuration > 0 ? fallbackDuration : DEFAULT_TIMER_SECONDS;
+      const safeRemaining = status.isActive
+        ? Math.max(0, status.remainingSeconds ?? safeDuration)
+        : safeDuration;
+
+      const nextState: OutletTimerState = {
+        isActive: status.isActive,
+        durationSeconds: safeDuration,
+        remainingSeconds: safeRemaining,
+        endsAt: status.endsAt,
+        source: (status.source as TimerSource | null) ?? null,
+      };
+
+      setTimerState(nextState);
+      setTimerPresetSeconds(safeDuration);
+      setCountdownSeconds(safeRemaining);
+      updateOutlet(status.outletId, {
+        timer: nextState,
+        timerPresetSeconds: safeDuration,
+      });
+    },
+    [timerPresetSeconds, updateOutlet],
+  );
+
+  const refreshTimerStatus = useCallback(async () => {
+    if (!Number.isFinite(outletId)) return;
+
+    try {
+      const status = await api.getOutletTimerStatus(outletId);
+      applyTimerStatus(status);
+    } catch (error) {
+      console.error("Failed to fetch timer status:", error);
+    }
+  }, [outletId, applyTimerStatus]);
+
+  const loadTimerLogs = useCallback(async () => {
+    if (!Number.isFinite(outletId)) return;
+
+    try {
+      const logs: TimerLogResponse[] = await api.getOutletTimerLogs(outletId);
+      setTimerLogs(logs.map(mapTimerLogToOutletLog));
+    } catch (error) {
+      console.error("Failed to fetch timer logs:", error);
+    }
+  }, [outletId]);
+
+  useEffect(() => {
+    if (!Number.isFinite(outletId)) return;
+    void refreshTimerStatus();
+    void loadTimerLogs();
+  }, [outletId, refreshTimerStatus, loadTimerLogs]);
+
+  useEffect(() => {
+    if (!Number.isFinite(outletId)) return;
+    const interval = setInterval(() => {
+      void loadTimerLogs();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [outletId, loadTimerLogs]);
+
+  useEffect(() => {
+    if (!timerState) {
+      setCountdownSeconds(timerPresetSeconds);
       return;
     }
 
-    const timer = outlet.timer ?? DEFAULT_TIMER;
-
-    updateOutlet(outlet.id, {
-      timer: {
-        ...timer,
-        isActive: outlet.timer ? !outlet.timer.isActive : true,
-      },
-    });
-  };
-
-  const handleTimerChange = (nextTimer: OutletTimerSetting) => {
-    if (!outlet || !outlet.isOn) {
+    if (!timerState.isActive || !timerState.endsAt) {
+      setCountdownSeconds(timerState.durationSeconds);
       return;
     }
 
-    updateOutlet(outlet.id, {
-      timer: {
-        ...nextTimer,
-        isActive: false,
-      },
-    });
-  };
+    const computeRemaining = () => {
+      const parsedEnds = parseIsoDate(timerState.endsAt);
+      if (!parsedEnds) {
+        return timerPresetSeconds;
+      }
+      return Math.max(0, Math.round((parsedEnds.getTime() - Date.now()) / 1000));
+    };
+
+    setCountdownSeconds(computeRemaining());
+
+    const interval = setInterval(() => {
+      const remaining = computeRemaining();
+      setCountdownSeconds(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        void refreshTimerStatus();
+        void loadTimerLogs();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [timerState, timerPresetSeconds, refreshTimerStatus, loadTimerLogs]);
+
+  const handleTimerDurationChange = useCallback(
+    async (nextSeconds: number) => {
+      if (!Number.isFinite(outletId) || !outlet) return;
+
+      const safeSeconds = Math.max(1, nextSeconds);
+      const previousPreset = timerPresetSeconds;
+      const previousState = timerState;
+
+      const optimisticState: OutletTimerState =
+        timerState && timerState.isActive
+          ? { ...timerState }
+          : {
+              isActive: false,
+              durationSeconds: safeSeconds,
+              remainingSeconds: safeSeconds,
+              endsAt: null,
+              source: timerState?.source ?? null,
+            };
+
+      setTimerState(optimisticState);
+      setTimerPresetSeconds(safeSeconds);
+      if (!optimisticState.isActive) {
+        setCountdownSeconds(safeSeconds);
+      }
+      updateOutlet(outletId, {
+        timer: optimisticState,
+        timerPresetSeconds: safeSeconds,
+      });
+
+      try {
+        const status = await api.updateOutletTimerPreset(outlet.id, safeSeconds);
+        applyTimerStatus(status);
+        await loadTimerLogs();
+        await refreshOutlets();
+      } catch (error) {
+        console.error("Failed to update timer preset:", error);
+        setTimerState(previousState ?? null);
+        setTimerPresetSeconds(previousPreset);
+        if (!previousState?.isActive) {
+          setCountdownSeconds(previousPreset);
+        }
+        updateOutlet(outletId, {
+          timer: previousState ?? null,
+          timerPresetSeconds: previousPreset,
+        });
+        throw error;
+      }
+    },
+    [
+      outlet,
+      outletId,
+      timerPresetSeconds,
+      timerState,
+      updateOutlet,
+      applyTimerStatus,
+      loadTimerLogs,
+      refreshOutlets,
+    ],
+  );
+
+  const handleStartTimer = useCallback(async () => {
+    if (!outlet || !Number.isFinite(outletId)) return;
+    if (!outlet.isOn) {
+      Alert.alert("Timer", "Nyalakan outlet terlebih dahulu sebelum memulai timer.");
+      return;
+    }
+
+    const duration = Math.max(1, timerPresetSeconds);
+
+    try {
+      setTimerActionLoading(true);
+      const status = await api.startOutletTimer(outlet.id, duration);
+      applyTimerStatus(status);
+      await loadTimerLogs();
+      await refreshOutlets();
+    } catch (error) {
+      console.error("Failed to start timer:", error);
+      Alert.alert("Timer", "Gagal memulai timer. Silakan coba lagi.");
+    } finally {
+      setTimerActionLoading(false);
+    }
+  }, [outlet, outletId, timerPresetSeconds, applyTimerStatus, loadTimerLogs, refreshOutlets]);
+
+  const handleStopTimer = useCallback(async () => {
+    if (!outlet || !Number.isFinite(outletId)) return;
+
+    try {
+      setTimerActionLoading(true);
+      const status = await api.stopOutletTimer(outlet.id);
+      applyTimerStatus(status);
+      await loadTimerLogs();
+      await refreshOutlets();
+    } catch (error) {
+      console.error("Failed to stop timer:", error);
+      Alert.alert("Timer", "Gagal menghentikan timer. Silakan coba lagi.");
+    } finally {
+      setTimerActionLoading(false);
+    }
+  }, [outlet, outletId, applyTimerStatus, loadTimerLogs, refreshOutlets]);
+
+  const handleTogglePower = useCallback(async () => {
+    if (!outlet) return;
+
+    try {
+      await toggleOutlet(outlet.id);
+    } finally {
+      await refreshOutlets();
+      await refreshTimerStatus();
+      await loadTimerLogs();
+    }
+  }, [outlet, toggleOutlet, refreshOutlets, refreshTimerStatus, loadTimerLogs]);
 
   const handleOpenRenameModal = () => {
     if (!outlet) return;
@@ -91,6 +366,7 @@ export default function OutletDetailsScreen() {
 
     try {
       await renameOutlet(outlet.id, newName.trim());
+      await refreshOutlets();
       setRenameModalVisible(false);
     } catch (error) {
       Alert.alert("Error", "Failed to rename outlet");
@@ -117,20 +393,20 @@ export default function OutletDetailsScreen() {
   }
 
   const isTimerEnabled = outlet.isOn;
+  const timerStatusText = !isTimerEnabled
+    ? "Nyalakan outlet untuk menggunakan timer"
+    : timerState?.isActive
+      ? timerState.source === "GEOFENCE"
+        ? "Timer geofence berjalan"
+        : "Timer berjalan"
+      : timerState?.source === "GEOFENCE"
+        ? "Timer geofence siap"
+        : `Durasi ${formatSecondsAsClock(timerPresetSeconds)}`;
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "status", label: "Status" },
     { key: "log", label: "Log" },
   ];
-
-  const timer = outlet.timer ?? DEFAULT_TIMER;
-  const timerStatusText = !isTimerEnabled
-    ? "Turn on the outlet to use the timer"
-    : outlet.timer
-      ? outlet.timer.isActive
-        ? "Timer running"
-        : "Timer ready"
-      : "Preset 15 min timer";
 
   return (
     <View className="flex-1 bg-[#E7E7E7]" style={{ paddingTop: insets.top }}>
@@ -190,26 +466,28 @@ export default function OutletDetailsScreen() {
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: 28,
-          paddingBottom: 220,
+          paddingBottom: 40,
         }}
         showsVerticalScrollIndicator={false}
       >
         {activeTab === "status" ? (
           <StatusSection
             outlet={outlet}
-            onTogglePower={() => toggleOutlet(outlet.id)}
-            timer={timer}
-            onTimerChange={handleTimerChange}
+            onTogglePower={handleTogglePower}
+            timerState={timerState}
+            timerPresetSeconds={timerPresetSeconds}
+            countdownSeconds={countdownSeconds}
             timerStatusText={timerStatusText}
-            onToggleTimer={handleToggleTimer}
             isTimerEnabled={isTimerEnabled}
+            onTimerDurationChange={handleTimerDurationChange}
+            onStartTimer={handleStartTimer}
+            onStopTimer={handleStopTimer}
+            isTimerActionLoading={isTimerActionLoading}
           />
         ) : (
-          <LogSection logs={outlet.logs} />
+          <LogSection logs={timerLogs} />
         )}
       </ScrollView>
-
-      <BottomNavigation />
 
       {/* Rename Modal */}
       <Modal
@@ -264,31 +542,52 @@ export default function OutletDetailsScreen() {
 function StatusSection({
   outlet,
   onTogglePower,
-  timer,
-  onTimerChange,
+  timerState,
+  timerPresetSeconds,
+  countdownSeconds,
   timerStatusText,
-  onToggleTimer,
+  onTimerDurationChange,
+  onStartTimer,
+  onStopTimer,
   isTimerEnabled,
+  isTimerActionLoading,
 }: {
   outlet: Outlet;
-  onTogglePower: () => void;
-  timer: OutletTimerSetting;
-  onTimerChange: (value: OutletTimerSetting) => void;
+  onTogglePower: () => Promise<void> | void;
+  timerState: OutletTimerState | null;
+  timerPresetSeconds: number;
+  countdownSeconds: number;
   timerStatusText: string;
-  onToggleTimer: () => void;
+  onTimerDurationChange: (seconds: number) => Promise<void> | void;
+  onStartTimer: () => void | Promise<void>;
+  onStopTimer: () => void | Promise<void>;
   isTimerEnabled: boolean;
+  isTimerActionLoading: boolean;
 }) {
   const [modalVisible, setModalVisible] = useState(false);
-  const [draftTimer, setDraftTimer] = useState<OutletTimerSetting>(timer);
+  const [draftTimer, setDraftTimer] = useState<TimerDurationValue>(secondsToDuration(timerPresetSeconds));
+  const [isSavingPreset, setSavingPreset] = useState(false);
+
+  useEffect(() => {
+    setDraftTimer(secondsToDuration(timerPresetSeconds));
+  }, [timerPresetSeconds]);
 
   const handleEditTimer = () => {
-    setDraftTimer({ ...timer });
+    setDraftTimer(secondsToDuration(timerPresetSeconds));
     setModalVisible(true);
   };
 
-  const handleConfirmTimer = (value: OutletTimerSetting) => {
-    onTimerChange(value);
-    setModalVisible(false);
+  const handleConfirmTimer = async (value: TimerDurationValue) => {
+    const seconds = durationToSeconds(value);
+    setSavingPreset(true);
+    try {
+      await onTimerDurationChange(seconds);
+      setModalVisible(false);
+    } catch (error) {
+      Alert.alert("Timer", "Gagal memperbarui durasi timer. Silakan coba lagi.");
+    } finally {
+      setSavingPreset(false);
+    }
   };
 
   const connectionStyles =
@@ -302,41 +601,38 @@ function StatusSection({
     { label: "Current Power Draw", value: `${outlet.powerDraw} W` },
   ];
 
-  const timerBadgeStyles = isTimerEnabled
-    ? timer.isActive
-      ? { background: "#DEF7EC", text: "#0E9F6E" }
-      : { background: "#F3F4FA", text: "#6E6F82" }
-    : { background: "#E5E7F3", text: "#9AA0B8" };
+  const isGeofenceTimer = timerState?.source === "GEOFENCE";
 
-  const showRunningTimer = timer.isActive && isTimerEnabled;
+  const timerBadgeStyles = !isTimerEnabled
+    ? { background: "#E5E7F3", text: "#9AA0B8" }
+    : timerState?.isActive
+      ? isGeofenceTimer
+        ? { background: "#FEE2E2", text: "#B91C1C" }
+        : { background: "#DEF7EC", text: "#0E9F6E" }
+      : isGeofenceTimer
+        ? { background: "#FEF3C7", text: "#B45309" }
+        : { background: "#F3F4FA", text: "#6E6F82" };
+
+  const showRunningTimer = Boolean(timerState?.isActive && isTimerEnabled);
+  const runningDisplay = secondsToDuration(countdownSeconds);
+  const presetDisplay = secondsToDuration(timerPresetSeconds);
+  const startDisabled = !isTimerEnabled || isTimerActionLoading || isSavingPreset;
+  const stopDisabled = !showRunningTimer || isTimerActionLoading || isSavingPreset;
 
   return (
     <View>
       <View className="mb-5 rounded-[28px] bg-white px-6 py-5">
         {statusRows.map((row) => (
-          <View
-            key={row.label}
-            className="flex-row items-center justify-between py-2"
-          >
-            <Text className="text-[13px] font-medium text-[#6E6F82]">
-              {row.label}
-            </Text>
+          <View key={row.label} className="flex-row items-center justify-between py-2">
+            <Text className="text-[13px] font-medium text-[#6E6F82]">{row.label}</Text>
             {row.isBadge ? (
-              <View
-                className="rounded-full px-3 py-1"
-                style={{ backgroundColor: connectionStyles.background }}
-              >
-                <Text
-                  className="text-[12px] font-semibold"
-                  style={{ color: connectionStyles.text }}
-                >
+              <View className="rounded-full px-3 py-1" style={{ backgroundColor: connectionStyles.background }}>
+                <Text className="text-[12px] font-semibold" style={{ color: connectionStyles.text }}>
                   {row.value}
                 </Text>
               </View>
             ) : (
-              <Text className="text-[15px] font-semibold text-[#0F0E41]">
-                {row.value}
-              </Text>
+              <Text className="text-[15px] font-semibold text-[#0F0E41]">{row.value}</Text>
             )}
           </View>
         ))}
@@ -345,18 +641,16 @@ function StatusSection({
       <View className="mb-5 rounded-[28px] bg-white px-6 py-5">
         <View className="flex-row items-center justify-between">
           <View className="max-w-[70%]">
-            <Text className="text-[16px] font-semibold text-[#0F0E41]">
-              Power
-            </Text>
+            <Text className="text-[16px] font-semibold text-[#0F0E41]">Power</Text>
             <Text className="mt-1 text-[12px] text-[#6E6F82]">
-              {outlet.isOn
-                ? "Outlet is currently active"
-                : "Outlet is turned off"}
+              {outlet.isOn ? "Outlet is currently active" : "Outlet is turned off"}
             </Text>
           </View>
           <Switch
             value={outlet.isOn}
-            onValueChange={onTogglePower}
+            onValueChange={() => {
+              void onTogglePower();
+            }}
             thumbColor="#FFFFFF"
             trackColor={{ false: "#CBD2E9", true: "#0F0E41" }}
             ios_backgroundColor="#CBD2E9"
@@ -366,17 +660,9 @@ function StatusSection({
 
       <View className="rounded-[28px] bg-white px-6 py-5">
         <View className="flex-row items-center justify-between mb-5">
-          <Text className="text-[16px] font-semibold text-[#0F0E41]">
-            Timer
-          </Text>
-          <View
-            className="px-3 py-1 rounded-full"
-            style={{ backgroundColor: timerBadgeStyles.background }}
-          >
-            <Text
-              className="text-[11px] font-semibold"
-              style={{ color: timerBadgeStyles.text }}
-            >
+          <Text className="text-[16px] font-semibold text-[#0F0E41]">Timer</Text>
+          <View className="px-3 py-1 rounded-full" style={{ backgroundColor: timerBadgeStyles.background }}>
+            <Text className="text-[11px] font-semibold" style={{ color: timerBadgeStyles.text }}>
               {timerStatusText}
             </Text>
           </View>
@@ -386,69 +672,75 @@ function StatusSection({
           <View className="rounded-[24px] bg-[#F3F4FA] px-6 py-6">
             <View className="items-center mb-5">
               <Text className="text-[48px] font-bold text-[#0F0E41] tracking-wider">
-                {String(timer.hours).padStart(2, "0")}:
-                {String(timer.minutes).padStart(2, "0")}:
-                {String(timer.seconds).padStart(2, "0")}
+                {String(runningDisplay.hours).padStart(2, "0")}:
+                {String(runningDisplay.minutes).padStart(2, "0")}:
+                {String(runningDisplay.seconds).padStart(2, "0")}
               </Text>
               <Text className="text-[13px] text-[#6E6F82] mt-2">
-                Time Remaining
+                {isGeofenceTimer ? "Geofence countdown" : "Time Remaining"}
               </Text>
             </View>
 
             <TouchableOpacity
-              className={`rounded-full px-8 py-3.5 ${
-                isTimerEnabled ? "bg-[#EF4444]" : "bg-[#CBD2E9]"
-              }`}
-              onPress={onToggleTimer}
-              activeOpacity={isTimerEnabled ? 0.9 : 1}
-              disabled={!isTimerEnabled}
+              className={`rounded-full px-8 py-3.5 ${stopDisabled ? "bg-[#CBD2E9]" : "bg-[#EF4444]"}`}
+              onPress={() => {
+                void onStopTimer();
+              }}
+              activeOpacity={stopDisabled ? 1 : 0.9}
+              disabled={stopDisabled}
             >
               <Text className="text-[14px] font-semibold text-white text-center">
-                Stop Timer
+                {isTimerActionLoading ? "Stopping..." : isGeofenceTimer ? "Stop Countdown" : "Stop Timer"}
               </Text>
             </TouchableOpacity>
           </View>
         ) : (
           <View className="rounded-[24px] bg-[#F3F4FA] px-6 py-6">
             <View className="items-center mb-5">
-              <Text className={`text-[48px] font-bold tracking-wider ${
-                isTimerEnabled ? "text-[#0F0E41]" : "text-[#9AA0B8]"
-              }`}>
-                {String(timer.hours).padStart(2, "0")}:
-                {String(timer.minutes).padStart(2, "0")}:
-                {String(timer.seconds).padStart(2, "0")}
+              <Text
+                className={`text-[48px] font-bold tracking-wider ${
+                  isTimerEnabled ? "text-[#0F0E41]" : "text-[#9AA0B8]"
+                }`}
+              >
+                {String(presetDisplay.hours).padStart(2, "0")}:
+                {String(presetDisplay.minutes).padStart(2, "0")}:
+                {String(presetDisplay.seconds).padStart(2, "0")}
               </Text>
               <Text className="text-[13px] text-[#6E6F82] mt-2">
-                Timer Duration
+                {isGeofenceTimer ? "Geofence Duration" : "Timer Duration"}
               </Text>
             </View>
 
             <View className="flex-row gap-3">
               <TouchableOpacity
                 className={`flex-1 rounded-full px-6 py-3.5 border ${
-                  isTimerEnabled ? "bg-white border-[#0F0E41]" : "bg-[#CBD2E9] border-[#CBD2E9]"
+                  isTimerEnabled && !isSavingPreset ? "bg-white border-[#0F0E41]" : "bg-[#CBD2E9] border-[#CBD2E9]"
                 }`}
                 onPress={handleEditTimer}
-                activeOpacity={isTimerEnabled ? 0.9 : 1}
-                disabled={!isTimerEnabled}
+                activeOpacity={isTimerEnabled && !isSavingPreset ? 0.9 : 1}
+                disabled={!isTimerEnabled || isTimerActionLoading || isSavingPreset}
               >
-                <Text className={`text-[14px] font-semibold text-center ${
-                  isTimerEnabled ? "text-[#0F0E41]" : "text-white"
-                }`}>
+                <Text
+                  className={`text-[14px] font-semibold text-center ${
+                    isTimerEnabled && !isSavingPreset ? "text-[#0F0E41]" : "text-white"
+                  }`}
+                >
                   Edit Timer
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 className={`flex-1 rounded-full px-6 py-3.5 ${
-                  isTimerEnabled ? "bg-[#0F0E41]" : "bg-[#9AA0B8]"
+                  startDisabled ? "bg-[#9AA0B8]" : "bg-[#0F0E41]"
                 }`}
-                onPress={onToggleTimer}
-                activeOpacity={isTimerEnabled ? 0.9 : 1}
-                disabled={!isTimerEnabled}
+                onPress={() => {
+                  void onStartTimer();
+                }}
+                activeOpacity={startDisabled ? 1 : 0.9}
+                disabled={startDisabled}
               >
                 <Text className="text-[14px] font-semibold text-white text-center">
-                  Start Timer
+                  {isTimerActionLoading ? "Processing..." : isSavingPreset ? "Saving..." : "Start Timer"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -462,11 +754,11 @@ function StatusSection({
         )}
       </View>
 
-      {/* Timer Picker Modal */}
       <TimerPickerModal
         visible={modalVisible}
         value={draftTimer}
         onConfirm={handleConfirmTimer}
+        isSaving={isSavingPreset}
         onCancel={() => setModalVisible(false)}
       />
     </View>

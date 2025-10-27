@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model PowerStrip {
@@ -25,9 +26,15 @@ model Outlet {
   state         Boolean?
   timer         Int?
   runtime       Int?
+  timerIsActive Boolean?          @map("timerisactive")
+  timerDuration Int?              @map("timerduration")
+  timerEndsAt   DateTime?         @map("timerendsat") @db.Timestamptz(6)
+  timerSource   TimerSource?      @map("timersource")
+  pendingAutoShutdown AutoShutdownRequest[]
   notifications NotificationLog[]
   powerStrip    PowerStrip?       @relation(fields: [powerstripID], references: [powerstripID], onDelete: Cascade, onUpdate: NoAction)
   usageLogs     UsageLog[]
+  timerLogs     TimerLog[]
 
   @@map("outlet")
 }
@@ -38,11 +45,9 @@ model UsageLog {
   current   Float?    @db.Real
   power     Float?    @db.Real
   energy    Float?    @db.Real
-  createdAt DateTime? @default(now()) @map("createdat") @db.Timestamp(6)
+  createdAt DateTime? @default(now()) @map("createdat") @db.Timestamptz(6)
   outlet    Outlet?   @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([outletID, createdAt])
-  @@index([createdAt])
   @@map("usagelog")
 }
 
@@ -50,7 +55,7 @@ model NotificationLog {
   notificationID Int       @id @default(autoincrement()) @map("notificationid")
   outletID       Int?      @map("outletid")
   message        String?
-  createdAt      DateTime? @default(now()) @map("createdat") @db.Timestamp(6)
+  createdAt      DateTime? @default(now()) @map("createdat") @db.Timestamptz(6)
   outlet         Outlet?   @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("notificationlog")
@@ -64,7 +69,70 @@ model GeofenceSetting {
   longitude        Float?
   radius           Int?
   autoShutdownTime Int?        @map("autoshutdowntime")
+  lastStatus       GeofenceZone? @map("laststatus")
+  countdownIsActive Boolean?    @map("countdownisactive")
+  countdownStartedAt DateTime?  @map("countdownstartedat") @db.Timestamptz(6)
+  countdownEndsAt  DateTime?    @map("countdownendsat") @db.Timestamptz(6)
+  lastAutoShutdownAt DateTime?  @map("lastautoshutdownat") @db.Timestamptz(6)
   powerStrip       PowerStrip? @relation(fields: [powerstripID], references: [powerstripID], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("geofencesetting")
+}
+
+enum TimerSource {
+  MANUAL
+  GEOFENCE
+}
+
+enum GeofenceZone {
+  INSIDE
+  OUTSIDE
+}
+
+enum AutoShutdownStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+enum TimerLogStatus {
+  STARTED
+  STOPPED
+  COMPLETED
+  AUTO_CANCELLED
+  POWER_OFF
+  REPLACED
+}
+
+model TimerLog {
+  timerLogID       Int            @id @default(autoincrement()) @map("timerlogid")
+  outletID         Int            @map("outletid")
+  status           TimerLogStatus
+  durationSeconds  Int?           @map("durationseconds")
+  remainingSeconds Int?           @map("remainingseconds")
+  note             String?
+  triggeredAt      DateTime       @default(now()) @map("triggeredat") @db.Timestamptz(6)
+  source           TimerSource?   @map("source")
+  outlet           Outlet         @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("timerlog")
+}
+
+model AutoShutdownRequest {
+  requestID     Int                 @id @default(autoincrement()) @map("requestid")
+  outletID      Int                 @map("outletid")
+  powerstripID  Int                 @map("powerstripid")
+  initiatedAt   DateTime            @default(now()) @map("initiatedat") @db.Timestamptz(6)
+  expiresAt     DateTime?           @map("expiresat") @db.Timestamptz(6)
+  status        AutoShutdownStatus  @default(PENDING)
+  source        TimerSource         @map("source")
+  note          String?
+  timerLogID    Int?                @map("timerlogid")
+
+  outlet        Outlet              @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("autoshutdownrequest")
+  @@index([powerstripID])
+  @@index([status])
 }
