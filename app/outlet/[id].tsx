@@ -115,7 +115,7 @@ export default function OutletDetailsScreen() {
   const outletIdParam = Array.isArray(id) ? id[0] : id;
   const outletId = useMemo(() => Number(outletIdParam), [outletIdParam]);
 
-  const { getOutletById, toggleOutlet, updateOutlet, renameOutlet, refreshOutlets } = useOutlets();
+  const { getOutletById, toggleOutlet, updateOutlet, renameOutlet, refreshOutlets, togglingOutlets } = useOutlets();
   const outlet = Number.isFinite(outletId) ? getOutletById(outletId) : undefined;
 
   const [activeTab, setActiveTab] = useState<DetailTab>("status");
@@ -483,6 +483,7 @@ export default function OutletDetailsScreen() {
             onStartTimer={handleStartTimer}
             onStopTimer={handleStopTimer}
             isTimerActionLoading={isTimerActionLoading}
+            isToggling={togglingOutlets?.has(outlet.id)}
           />
         ) : (
           <LogSection logs={timerLogs} />
@@ -551,6 +552,7 @@ function StatusSection({
   onStopTimer,
   isTimerEnabled,
   isTimerActionLoading,
+  isToggling,
 }: {
   outlet: Outlet;
   onTogglePower: () => Promise<void> | void;
@@ -563,6 +565,7 @@ function StatusSection({
   onStopTimer: () => void | Promise<void>;
   isTimerEnabled: boolean;
   isTimerActionLoading: boolean;
+  isToggling?: boolean;
 }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [draftTimer, setDraftTimer] = useState<TimerDurationValue>(secondsToDuration(timerPresetSeconds));
@@ -651,9 +654,11 @@ function StatusSection({
             onValueChange={() => {
               void onTogglePower();
             }}
+            disabled={isToggling}
             thumbColor="#FFFFFF"
             trackColor={{ false: "#CBD2E9", true: "#0F0E41" }}
             ios_backgroundColor="#CBD2E9"
+            style={{ opacity: isToggling ? 0.5 : 1 }}
           />
         </View>
       </View>

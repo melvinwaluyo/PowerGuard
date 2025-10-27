@@ -6,9 +6,10 @@ interface OutletsListProps {
   outlets: Outlet[];
   onToggleOutlet?: (id: number) => void;
   onPressOutlet?: (outlet: Outlet) => void;
+  togglingOutlets?: Set<number>;
 }
 
-export function OutletsList({ outlets, onToggleOutlet, onPressOutlet }: OutletsListProps) {
+export function OutletsList({ outlets, onToggleOutlet, onPressOutlet, togglingOutlets }: OutletsListProps) {
   return (
     <ScrollView
       className="flex-1"
@@ -21,6 +22,7 @@ export function OutletsList({ outlets, onToggleOutlet, onPressOutlet }: OutletsL
           outlet={outlet}
           onToggle={onToggleOutlet}
           onPress={onPressOutlet}
+          isToggling={togglingOutlets?.has(outlet.id)}
         />
       ))}
     </ScrollView>

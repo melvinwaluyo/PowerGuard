@@ -10,6 +10,7 @@ interface OutletContextValue {
   renameOutlet: (id: number, name: string) => Promise<void>;
   refreshOutlets: () => Promise<void>;
   isLoading: boolean;
+  togglingOutlets: Set<number>; // Track which outlets are currently being toggled
 }
 
 const OutletContext = createContext<OutletContextValue | null>(null);
@@ -73,6 +74,7 @@ const transformOutlet = (backendOutlet: any): Outlet => {
 export function OutletProvider({ children }: { children: ReactNode }) {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [togglingOutlets, setTogglingOutlets] = useState<Set<number>>(new Set());
 
   // Fetch outlets from backend
   const refreshOutlets = useCallback(async () => {
@@ -102,10 +104,19 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   }, [refreshOutlets]);
 
   const toggleOutlet = useCallback(async (id: number) => {
+    // Prevent toggling if already in progress
+    if (togglingOutlets.has(id)) {
+      console.log(`Outlet ${id} is already being toggled, ignoring request`);
+      return;
+    }
+
     const outlet = outlets.find((o) => o.id === id);
     if (!outlet) return;
 
     const newState = !outlet.isOn;
+
+    // Mark outlet as toggling
+    setTogglingOutlets((prev) => new Set(prev).add(id));
 
     // Optimistically update UI
     setOutlets((prev) =>
@@ -136,12 +147,22 @@ export function OutletProvider({ children }: { children: ReactNode }) {
     try {
       // Send update to backend
       await api.updateOutletState(id, newState);
+
+      // Add a small delay before allowing next toggle (500ms cooldown)
+      await new Promise((resolve) => setTimeout(resolve, 500));
     } catch (error) {
       console.error('Failed to toggle outlet:', error);
       // Revert on error
       await refreshOutlets();
+    } finally {
+      // Remove outlet from toggling set
+      setTogglingOutlets((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
-  }, [outlets, refreshOutlets]);
+  }, [outlets, togglingOutlets, refreshOutlets]);
 
   const updateOutlet = useCallback((id: number, updates: Partial<Outlet>) => {
     setOutlets((prev) =>
@@ -171,8 +192,8 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading }),
-    [outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading]
+    () => ({ outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading, togglingOutlets }),
+    [outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading, togglingOutlets]
   );
 
   return <OutletContext.Provider value={value}>{children}</OutletContext.Provider>;

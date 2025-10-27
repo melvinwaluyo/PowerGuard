@@ -11,7 +11,7 @@ import { Outlet } from "@/types/outlet";
 
 export default function App() {
   const router = useRouter();
-  const { outlets, toggleOutlet } = useOutlets();
+  const { outlets, toggleOutlet, togglingOutlets } = useOutlets();
 
   const totalPower = useMemo(
     () => outlets.reduce((sum, outlet) => sum + (outlet.isOn ? outlet.powerDraw : 0), 0),
@@ -30,6 +30,7 @@ export default function App() {
           outlets={outlets}
           onToggleOutlet={toggleOutlet}
           onPressOutlet={handlePressOutlet}
+          togglingOutlets={togglingOutlets}
         />
       </View>
       <BottomNavigation activeTab="home" />

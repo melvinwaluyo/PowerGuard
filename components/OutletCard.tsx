@@ -8,6 +8,7 @@ interface OutletCardProps {
   outlet: Outlet;
   onToggle?: (id: number) => void;
   onPress?: (outlet: Outlet) => void;
+  isToggling?: boolean;
 }
 
 const STATUS_STYLES: Record<string, { container: string; text: string }> = {
@@ -33,7 +34,7 @@ const CARD_SHADOW = {
   elevation: 3,
 };
 
-export function OutletCard({ outlet, onToggle, onPress }: OutletCardProps) {
+export function OutletCard({ outlet, onToggle, onPress, isToggling = false }: OutletCardProps) {
   const statusStyle = STATUS_STYLES[outlet.status] ?? STATUS_STYLES.default;
 
   return (
@@ -87,10 +88,11 @@ export function OutletCard({ outlet, onToggle, onPress }: OutletCardProps) {
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => onToggle?.(outlet.id)}
+            disabled={isToggling}
             className={`rounded-full p-0.5 ${
               outlet.isOn ? "bg-[#0F0E41]" : "bg-[#CBD2E9]"
             }`}
-            style={{ width: 52, height: 28 }}
+            style={{ width: 52, height: 28, opacity: isToggling ? 0.5 : 1 }}
           >
             <View
               className="rounded-full bg-white"
