@@ -1,4 +1,4 @@
-name: Build and Deploy Container to Azure
+name: Build and Deploy to Azure Container Apps
 
 on:
   push:
@@ -12,13 +12,16 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/powerguard-backend
+  CONTAINER_APP_NAME: powerguard-backend
+  RESOURCE_GROUP: PowerGuard-RG
 
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -48,9 +51,20 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v2
+      - name: Log in to Azure
+        uses: azure/login@v1
         with:
-          app-name: powerguard-backend
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          imageToDeploy: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          environmentVariables: |
+            DATABASE_URL=secretref:database-url
+            DIRECT_URL=secretref:direct-url
+            MQTT_SERVER=${{ secrets.MQTT_SERVER }}
+            MQTT_PORT=${{ secrets.MQTT_PORT }}
+            NODE_ENV=production
