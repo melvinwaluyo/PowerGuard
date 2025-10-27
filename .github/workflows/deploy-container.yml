@@ -5,15 +5,15 @@ on:
     branches:
       - master
     paths:
-      - 'backend/**'
-      - '.github/workflows/deploy-container.yml'
+      - "backend/**"
+      - ".github/workflows/deploy-container.yml"
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/powerguard-backend
   CONTAINER_APP_NAME: powerguard-backend
-  RESOURCE_GROUP: PowerGuard-RG
+  RESOURCE_GROUP: PowerGuard
 
 jobs:
   build-and-deploy:
