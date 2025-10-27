@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/powerguard-backend
+  IMAGE_NAME: melvinwaluyo/powerguard/powerguard-backend
   CONTAINER_APP_NAME: powerguard-backend
   RESOURCE_GROUP: PowerGuard
 
