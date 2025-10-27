@@ -7,14 +7,19 @@ import { Platform, ScrollView, StatusBar, Text, View, ActivityIndicator } from "
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocation } from "@/context/LocationContext";
 import { useGeofenceMonitor, DEFAULT_POWERSTRIP_ID } from "@/context/GeofenceMonitorContext";
+import { useOutlets } from "@/context/OutletContext";
 import { api } from "@/services/api";
 
 export default function SettingsScreen() {
   const { pendingLocation, setPendingLocation } = useLocation();
   const { settings, status, refreshSettings, updateSettingsLocal, pendingRequest, isResolvingRequest } =
     useGeofenceMonitor();
+  const { outlets } = useOutlets();
   const [isSaving, setIsSaving] = useState(false);
   const isLoading = !settings;
+
+  // Check if any outlets are currently ON
+  const hasActiveOutlets = outlets.some(outlet => outlet.isOn);
 
   const insets = useSafeAreaInsets();
 
@@ -166,6 +171,7 @@ export default function SettingsScreen() {
               countdownRemainingSeconds={status.remainingSeconds}
               geofenceZone={status.zone}
               pendingRequest={pendingRequest}
+              hasActiveOutlets={hasActiveOutlets}
               onShutdownTimeChange={handleShutdownTimeChange}
               isSaving={isSaving || isResolvingRequest}
             />

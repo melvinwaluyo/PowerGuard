@@ -118,7 +118,7 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
       if (lastCoordsRef.current) {
         pollingIntervalRef.current = setInterval(() => {
           void reportLocation(lastCoordsRef.current!.latitude, lastCoordsRef.current!.longitude, true);
-        }, 15000);
+        }, 5000); // Poll every 5 seconds during countdown for faster detection
       }
     }
   }, [clearIntervals, computeRemainingSeconds, status.countdownEndsAt, status.countdownIsActive]);
@@ -162,8 +162,8 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
     const subscription = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.Balanced,
-        timeInterval: 5000,
-        distanceInterval: 25,
+        timeInterval: 3000,  // Check every 3 seconds (faster response)
+        distanceInterval: 10, // Update when moved 10 meters (more sensitive)
       },
       (location) => {
         const coords = location.coords;
@@ -179,7 +179,7 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
     async (latitude: number, longitude: number, force = false) => {
       if (!settings?.isEnabled) return;
       const now = Date.now();
-      if (!force && now - lastReportTimestampRef.current < 4000) {
+      if (!force && now - lastReportTimestampRef.current < 2500) {
         return;
       }
       lastReportTimestampRef.current = now;

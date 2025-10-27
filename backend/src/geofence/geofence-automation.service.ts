@@ -127,6 +127,29 @@ export class GeofenceAutomationService {
           },
         });
 
+        // If no outlets are ON, don't start the countdown
+        if (outlets.length === 0) {
+          await this.prisma.geofenceSetting.update({
+            where: { settingID: settings.settingID },
+            data: {
+              lastStatus: GeofenceZone.OUTSIDE,
+              countdownIsActive: false,
+              countdownStartedAt: null,
+              countdownEndsAt: null,
+            },
+          });
+
+          return {
+            zone,
+            distanceMeters,
+            countdownIsActive: false,
+            countdownEndsAt: null,
+            autoShutdownSeconds,
+            triggeredOutlets,
+            pendingRequest: serializedPending,
+          };
+        }
+
         for (const outlet of outlets) {
           try {
             await this.timerService.startTimer(outlet.outletID, autoShutdownSeconds, {
@@ -164,6 +187,40 @@ export class GeofenceAutomationService {
       }
 
       // Already outside with active countdown
+      // Check if there are still any outlets ON with geofence timer
+      const activeOutlets = await this.prisma.outlet.findMany({
+        where: {
+          powerstripID,
+          state: true,
+          timerIsActive: true,
+          timerSource: TimerSource.GEOFENCE,
+        },
+        select: { outletID: true },
+      });
+
+      // If no outlets are ON anymore, stop the countdown
+      if (activeOutlets.length === 0) {
+        await this.prisma.geofenceSetting.update({
+          where: { settingID: settings.settingID },
+          data: {
+            lastStatus: GeofenceZone.OUTSIDE,
+            countdownIsActive: false,
+            countdownStartedAt: null,
+            countdownEndsAt: null,
+          },
+        });
+
+        return {
+          zone,
+          distanceMeters,
+          countdownIsActive: false,
+          countdownEndsAt: null,
+          autoShutdownSeconds,
+          triggeredOutlets,
+          pendingRequest: serializedPending,
+        };
+      }
+
       if (previousZone !== GeofenceZone.OUTSIDE) {
         await this.prisma.geofenceSetting.update({
           where: { settingID: settings.settingID },
