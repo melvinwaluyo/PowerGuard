@@ -104,7 +104,6 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
 
       // For now, we'll rely on the notification sound
       // expo-audio requires a different approach with useAudioPlayer hook
-      console.log('Alert sound triggered (using notification sound)');
     } catch (error) {
       console.error('Failed to play alert sound:', error);
     }
@@ -114,20 +113,17 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
   const sendGeofenceAlert = useCallback(async (activeOutletCount: number, timerSeconds: number, reason: 'left_zone' | 'turned_on_outside' = 'left_zone') => {
     // Don't send if geofencing is disabled
     if (!settings?.isEnabled) {
-      console.log('Geofencing disabled, skipping notification');
       return;
     }
 
     // Prevent notification spam - only send once per 10 seconds
     const now = Date.now();
     if (now - lastNotificationSentRef.current < 10000) {
-      console.log('Notification cooldown active, skipping');
       return;
     }
 
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
-      console.log('Notification permissions not granted');
       return;
     }
 
@@ -158,7 +154,6 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
 
       // Update last notification timestamp
       lastNotificationSentRef.current = now;
-      console.log(`Geofence alert sent: ${reason}, outlets: ${activeOutletCount}`);
     } catch (error) {
       console.error('Failed to send geofence alert:', error);
     }
@@ -196,7 +191,6 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
       if (previousZone === "OUTSIDE" && newZone === "INSIDE") {
         // Reset notification cooldown when entering zone
         // This allows notification to be sent again if user leaves again
-        console.log('User entered zone, resetting notification cooldown');
         lastNotificationSentRef.current = 0;
       }
 

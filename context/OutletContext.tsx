@@ -114,7 +114,6 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   const toggleOutlet = useCallback(async (id: number) => {
     // Prevent toggling if already in progress
     if (togglingOutlets.has(id)) {
-      console.log(`Outlet ${id} is already being toggled, ignoring request`);
       return;
     }
 

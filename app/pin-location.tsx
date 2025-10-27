@@ -72,7 +72,6 @@ export default function PinLocationScreen() {
           } catch (geocodeError: any) {
             // Handle rate limit gracefully
             if (geocodeError?.message?.includes('rate limit')) {
-              console.log('Geocoding rate limit hit, showing coordinates instead');
               setSelectedLocation(prev => ({
                 ...prev,
                 address: `Location selected`,
@@ -115,7 +114,6 @@ export default function PinLocationScreen() {
         if (Platform.OS === 'web') {
           alert('Location permission denied. Please enable location access in your browser settings.');
         }
-        console.log('Location permission status:', status);
         return;
       }
 

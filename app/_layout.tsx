@@ -21,13 +21,10 @@ export default function RootLayout() {
         const update = await Updates.checkForUpdateAsync();
 
         if (update.isAvailable) {
-          console.log("Update available, downloading...");
           await Updates.fetchUpdateAsync();
 
           // Reload the app to apply the update
           await Updates.reloadAsync();
-        } else {
-          console.log("App is up to date");
         }
       } catch (error) {
         console.error("Error checking for updates:", error);
