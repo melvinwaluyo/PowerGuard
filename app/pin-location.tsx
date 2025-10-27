@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Platform, StatusBar, Text, TouchableOpacity, View } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,51 +25,76 @@ export default function PinLocationScreen() {
   const [radius, setRadius] = useState(params.radius ? parseFloat(params.radius as string) : 1500);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
   const [isInitialized, setIsInitialized] = useState(hasInitialLocation);
+  const [currentZoom, setCurrentZoom] = useState(15); // Track current zoom level
+  const geocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const topInset =
     (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0) +
     BASE_TOP_PADDING;
 
   const handleLocationChange = async (lat: number, lng: number) => {
+    // Update location immediately
     setSelectedLocation(prev => ({ ...prev, latitude: lat, longitude: lng }));
 
-    // Reverse geocode to get address (not available on web in SDK 49+)
-    try {
-      setIsLoadingAddress(true);
-
-      if (Platform.OS === 'web') {
-        // For web, just show coordinates
-        setSelectedLocation({
-          latitude: lat,
-          longitude: lng,
-          address: `Lat: ${lat.toFixed(6)}`,
-          city: `Lng: ${lng.toFixed(6)}`,
-        });
-      } else {
-        // For native, use reverse geocoding
-        const [geocode] = await Location.reverseGeocodeAsync({
-          latitude: lat,
-          longitude: lng,
-        });
-
-        setSelectedLocation({
-          latitude: lat,
-          longitude: lng,
-          address: `${geocode.streetNumber || ''} ${geocode.street || ''}`.trim() || 'Unknown Location',
-          city: `${geocode.city || ''}, ${geocode.region || ''}`.trim(),
-        });
-      }
-
-      setIsLoadingAddress(false);
-    } catch (error) {
-      console.error('Error geocoding:', error);
-      setSelectedLocation(prev => ({
-        ...prev,
-        address: 'Unknown Location',
-        city: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
-      }));
-      setIsLoadingAddress(false);
+    // Clear previous geocoding timeout
+    if (geocodeTimeoutRef.current) {
+      clearTimeout(geocodeTimeoutRef.current);
     }
+
+    // Debounce geocoding to prevent rate limiting (wait 1 second after last change)
+    geocodeTimeoutRef.current = setTimeout(async () => {
+      // Reverse geocode to get address (not available on web in SDK 49+)
+      try {
+        setIsLoadingAddress(true);
+
+        if (Platform.OS === 'web') {
+          // For web, just show coordinates
+          setSelectedLocation({
+            latitude: lat,
+            longitude: lng,
+            address: `Lat: ${lat.toFixed(6)}`,
+            city: `Lng: ${lng.toFixed(6)}`,
+          });
+        } else {
+          // For native, use reverse geocoding with rate limit protection
+          try {
+            const [geocode] = await Location.reverseGeocodeAsync({
+              latitude: lat,
+              longitude: lng,
+            });
+
+            setSelectedLocation({
+              latitude: lat,
+              longitude: lng,
+              address: `${geocode.streetNumber || ''} ${geocode.street || ''}`.trim() || 'Unknown Location',
+              city: `${geocode.city || ''}, ${geocode.region || ''}`.trim(),
+            });
+          } catch (geocodeError: any) {
+            // Handle rate limit gracefully
+            if (geocodeError?.message?.includes('rate limit')) {
+              console.log('Geocoding rate limit hit, showing coordinates instead');
+              setSelectedLocation(prev => ({
+                ...prev,
+                address: `Location selected`,
+                city: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+              }));
+            } else {
+              throw geocodeError;
+            }
+          }
+        }
+
+        setIsLoadingAddress(false);
+      } catch (error) {
+        console.error('Error geocoding:', error);
+        setSelectedLocation(prev => ({
+          ...prev,
+          address: 'Location selected',
+          city: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+        }));
+        setIsLoadingAddress(false);
+      }
+    }, 1000); // Wait 1 second after user stops changing location
   };
 
   const handleSaveLocation = () => {
@@ -127,6 +152,15 @@ export default function PinLocationScreen() {
       handleLocationChange(selectedLocation.latitude, selectedLocation.longitude);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cleanup geocoding timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+      }
+    };
   }, []);
 
   if (Platform.OS === "web") {
@@ -257,7 +291,8 @@ export default function PinLocationScreen() {
   }
 
   // Mobile: Use WebView with Leaflet for interactive map
-  const mobileMapHTML = `
+  // Memoize HTML to prevent unnecessary reloads - only depends on initial values
+  const mobileMapHTML = useMemo(() => `
     <!DOCTYPE html>
     <html>
     <head>
@@ -272,8 +307,8 @@ export default function PinLocationScreen() {
     <body>
       <div id="map"></div>
       <script>
-        // Initialize map
-        var map = L.map('map').setView([${selectedLocation.latitude}, ${selectedLocation.longitude}], 15);
+        // Initialize map with current zoom level
+        var map = L.map('map').setView([${selectedLocation.latitude}, ${selectedLocation.longitude}], ${currentZoom});
         window.map = map;
 
         // Add tile layer
@@ -312,13 +347,24 @@ export default function PinLocationScreen() {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'locationChange',
             latitude: e.latlng.lat,
-            longitude: e.latlng.lng
+            longitude: e.latlng.lng,
+            zoom: map.getZoom()
+          }));
+        });
+
+        // Track zoom changes
+        map.on('zoomend', function() {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'zoomChange',
+            zoom: map.getZoom()
           }));
         });
       </script>
     </body>
     </html>
-  `;
+  `, [radius, currentZoom, selectedLocation.latitude, selectedLocation.longitude]);
+  // Note: Including location and zoom in dependencies ensures map stays synchronized
+  // The map only regenerates when these values actually change, preserving the zoom level
 
   return (
     <View className="flex-1 bg-white">
@@ -365,7 +411,12 @@ export default function PinLocationScreen() {
             try {
               const data = JSON.parse(event.nativeEvent.data);
               if (data.type === 'locationChange') {
+                if (data.zoom !== undefined) {
+                  setCurrentZoom(data.zoom);
+                }
                 handleLocationChange(data.latitude, data.longitude);
+              } else if (data.type === 'zoomChange') {
+                setCurrentZoom(data.zoom);
               }
             } catch (error) {
               console.error('Error parsing WebView message:', error);

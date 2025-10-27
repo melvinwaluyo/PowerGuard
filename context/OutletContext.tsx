@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Outlet, TimerSource } from "@/types/outlet";
 import { api } from "@/services/api";
+import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
 
 interface OutletContextValue {
   outlets: Outlet[];
@@ -10,6 +11,7 @@ interface OutletContextValue {
   renameOutlet: (id: number, name: string) => Promise<void>;
   refreshOutlets: () => Promise<void>;
   isLoading: boolean;
+  togglingOutlets: Set<number>; // Track which outlets are currently being toggled
 }
 
 const OutletContext = createContext<OutletContextValue | null>(null);
@@ -73,6 +75,10 @@ const transformOutlet = (backendOutlet: any): Outlet => {
 export function OutletProvider({ children }: { children: ReactNode }) {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [togglingOutlets, setTogglingOutlets] = useState<Set<number>>(new Set());
+
+  // Access geofence context to check zone status and trigger notifications
+  const geofenceContext = useGeofenceMonitor();
 
   // Fetch outlets from backend
   const refreshOutlets = useCallback(async () => {
@@ -92,20 +98,33 @@ export function OutletProvider({ children }: { children: ReactNode }) {
     refreshOutlets();
   }, [refreshOutlets]);
 
-  // Poll for updates every 5 seconds
+  // Poll for updates every 5 seconds (but skip if outlets are being toggled)
   useEffect(() => {
     const interval = setInterval(() => {
-      refreshOutlets();
+      // Don't refresh if any outlets are currently being toggled
+      // This prevents the poll from overwriting optimistic updates
+      if (togglingOutlets.size === 0) {
+        refreshOutlets();
+      }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [refreshOutlets]);
+  }, [refreshOutlets, togglingOutlets]);
 
   const toggleOutlet = useCallback(async (id: number) => {
+    // Prevent toggling if already in progress
+    if (togglingOutlets.has(id)) {
+      console.log(`Outlet ${id} is already being toggled, ignoring request`);
+      return;
+    }
+
     const outlet = outlets.find((o) => o.id === id);
     if (!outlet) return;
 
     const newState = !outlet.isOn;
+
+    // Mark outlet as toggling
+    setTogglingOutlets((prev) => new Set(prev).add(id));
 
     // Optimistically update UI
     setOutlets((prev) =>
@@ -136,12 +155,41 @@ export function OutletProvider({ children }: { children: ReactNode }) {
     try {
       // Send update to backend
       await api.updateOutletState(id, newState);
+
+      // Add a small delay before allowing next toggle (500ms cooldown)
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Refresh to get confirmed state from backend
+      await refreshOutlets();
+
+      // Check if outlet was turned ON while outside geofence zone
+      if (newState && geofenceContext.settings?.isEnabled && geofenceContext.status.zone === "OUTSIDE") {
+        // Count how many outlets are now ON
+        const currentOutlets = await api.getOutlets();
+        const activeOutletCount = currentOutlets.filter(o => o.state).length;
+
+        if (activeOutletCount > 0) {
+          // Trigger notification - user turned ON outlet(s) while outside
+          await geofenceContext.sendGeofenceAlert(
+            activeOutletCount,
+            geofenceContext.settings?.autoShutdownTime || 900,
+            'turned_on_outside'
+          );
+        }
+      }
     } catch (error) {
       console.error('Failed to toggle outlet:', error);
       // Revert on error
       await refreshOutlets();
+    } finally {
+      // Remove outlet from toggling set
+      setTogglingOutlets((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
-  }, [outlets, refreshOutlets]);
+  }, [outlets, togglingOutlets, refreshOutlets, geofenceContext]);
 
   const updateOutlet = useCallback((id: number, updates: Partial<Outlet>) => {
     setOutlets((prev) =>
@@ -171,8 +219,8 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading }),
-    [outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading]
+    () => ({ outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading, togglingOutlets }),
+    [outlets, toggleOutlet, updateOutlet, getOutletById, renameOutlet, refreshOutlets, isLoading, togglingOutlets]
   );
 
   return <OutletContext.Provider value={value}>{children}</OutletContext.Provider>;

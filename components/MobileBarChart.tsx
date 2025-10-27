@@ -45,7 +45,6 @@ export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarCha
   const axisBaselineY = padding.top + chartHeight;
 
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [touchX, setTouchX] = useState<number>(0);
 
   if (!data || data.length === 0) {
     return null;
@@ -93,18 +92,18 @@ export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarCha
     };
   });
 
-  const handleTouch = (event: GestureResponderEvent) => {
+  const handleTap = (event: GestureResponderEvent) => {
     const { locationX } = event.nativeEvent;
-    setTouchX(locationX);
 
-    // Find which bar was touched
+    // Find which bar was tapped
     const relativeX = locationX - padding.left;
     if (relativeX >= 0 && relativeX <= chartWidth) {
       const index = Math.floor(relativeX / barWidth);
       if (index >= 0 && index < data.length) {
         // Don't show tooltip for future data, empty labels, or empty data (usage === 0)
         if (!data[index].isFuture && data[index].label && data[index].usage > 0) {
-          setActiveIndex(index);
+          // Toggle tooltip: if same bar is tapped, hide it; otherwise show new bar
+          setActiveIndex(prevIndex => prevIndex === index ? null : index);
         } else {
           setActiveIndex(null);
         }
@@ -114,19 +113,15 @@ export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarCha
     }
   };
 
-  const handleTouchEnd = () => {
-    setActiveIndex(null);
-  };
-
   return (
     <View className="w-full items-center justify-center" style={{ height, paddingHorizontal: 8 }}>
       {/* Tooltip */}
-      {activeIndex !== null && (
+      {activeIndex !== null && bars[activeIndex] && (
         <View
           className="absolute bg-[#0F0E41] rounded-lg px-3 py-2"
           style={{
             top: 10,
-            left: Math.max(20, Math.min(width - 100, touchX - 40)),
+            left: Math.max(20, Math.min(width - 100, bars[activeIndex].x + actualBarWidth / 2 - 40)),
             zIndex: 10,
             elevation: 5,
             shadowColor: '#000',
@@ -147,9 +142,7 @@ export function MobileBarChart({ data, maxValue = 300, unit = "" }: MobileBarCha
       <Svg
         width={width}
         height={height}
-        onTouchStart={handleTouch}
-        onTouchMove={handleTouch}
-        onTouchEnd={handleTouchEnd}
+        onPress={handleTap}
       >
         {/* Define gradients */}
         <Defs>

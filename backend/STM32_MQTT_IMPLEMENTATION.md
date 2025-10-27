@@ -4,21 +4,20 @@ This document describes the exact MQTT topics and message formats your STM32 sho
 
 ## MQTT Broker Connection
 
-**Broker**: HiveMQ Cloud
-**Protocol**: MQTTS (MQTT over TLS)
-**Port**: 8883
-**Server**: `your-mqtt-server.hivemq.cloud` (get from .env)
-**Authentication**: Username & Password (get from .env)
+**Broker**: Public EMQX
+**Protocol**: MQTT
+**Port**: 1883
+**Server**: `broker.emqx.io` (get from .env)
+**Authentication**: Not required for public broker (Username & Password optional)
 
 ### Connection Settings
 ```c
 // Example connection settings
-mqtt_server = "your-server.hivemq.cloud"
-mqtt_port = 8883
-mqtt_username = "your-username"
-mqtt_password = "your-password"
-protocol = MQTTS  // Secure MQTT over TLS
-require_certificate_validation = true
+mqtt_server = "broker.emqx.io"
+mqtt_port = 1883
+mqtt_username = ""  // Optional for public broker
+mqtt_password = ""  // Optional for public broker
+protocol = MQTT
 ```
 
 ## Topic Structure
@@ -138,9 +137,9 @@ void onMessageReceived(char* topic, char* payload) {
 ## Complete STM32 Implementation Checklist
 
 ### Initial Setup
-- [ ] Connect to HiveMQ MQTT broker using MQTTS (port 8883)
-- [ ] Use credentials from environment variables
-- [ ] Enable TLS/SSL certificate validation
+- [ ] Connect to Public EMQX MQTT broker (port 1883)
+- [ ] Use broker address from environment variables
+- [ ] Authentication is optional for public broker
 
 ### Subscribe to Control Topics
 - [ ] Subscribe to `powerguard/+/control` on startup
@@ -162,27 +161,38 @@ void onMessageReceived(char* topic, char* payload) {
 
 ## Testing Before STM32 Integration
 
-The backend simulator already implements this exact behavior. To test:
+A standalone MQTT simulator is available in the `mqtt-simulator/` directory. To test:
 
-1. Enable simulator in `.env`:
-   ```
-   ENABLE_MQTT_SIMULATOR=true
-   ```
-
-2. Start backend:
+1. Navigate to the simulator directory:
    ```bash
-   npm run start:dev
+   cd mqtt-simulator
    ```
 
-3. You should see:
-   ```
-   🧪 MQTT Simulator: ENABLED
-   → Publishing to MQTT topics (same as STM32 will use)
-   → Simulating power data every 5 seconds
-   📊 [Simulator] Published to powerguard/1/data: 125.34W, 0.570A, 0.0174kWh
+2. Install dependencies:
+   ```bash
+   npm install
    ```
 
-4. Test outlet control via API:
+3. Configure the simulator (copy .env.example to .env and update settings):
+   ```bash
+   cp .env.example .env
+   ```
+
+4. Start the simulator:
+   ```bash
+   npm start
+   ```
+
+5. You should see:
+   ```
+   ✅ Connected to MQTT broker
+   📍 Initialized 4 outlets: 1, 2, 3, 4
+   👂 Subscribed to powerguard/+/control
+   🚀 Starting simulation...
+   📊 Outlet 1: 125.34W, 0.570A, 0.0174kWh
+   ```
+
+6. Test outlet control via API:
    ```bash
    curl -X PATCH http://localhost:3000/outlets/1/state \
      -H "Content-Type: application/json" \
@@ -193,10 +203,7 @@ The backend simulator already implements this exact behavior. To test:
 
 When your STM32 is ready:
 
-1. Disable simulator in `.env`:
-   ```
-   ENABLE_MQTT_SIMULATOR=false
-   ```
+1. Stop the MQTT simulator (Ctrl+C)
 
 2. Connect STM32 to the same MQTT broker
 
@@ -212,7 +219,7 @@ The backend will automatically:
 ```
 ┌─────────────┐                    ┌──────────────┐                    ┌──────────────┐
 │   STM32     │                    │ MQTT Broker  │                    │   Backend    │
-│  (Hardware) │                    │  (HiveMQ)    │                    │  (NestJS)    │
+│  (Hardware) │                    │ (Public EMQX)│                    │  (NestJS)    │
 └─────────────┘                    └──────────────┘                    └──────────────┘
        │                                   │                                   │
        │  Subscribe: powerguard/+/control  │                                   │
@@ -261,4 +268,5 @@ Expected messages: {"state":true} or {"state":false}
 
 If you have questions about the implementation, check:
 - `backend/src/mqtt/mqtt.service.ts` - Main MQTT service
-- `backend/src/mqtt/mqtt-simulator.service.ts` - Simulator (reference implementation)
+- `mqtt-simulator/index.js` - Standalone simulator (reference implementation)
+- `mqtt-simulator/README.md` - Simulator documentation

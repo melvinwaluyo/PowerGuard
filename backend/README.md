@@ -1,11 +1,11 @@
 # PowerGuard Backend
 
-NestJS backend server for PowerGuard smart outlet management system with PostgreSQL and HiveMQ MQTT integration.
+NestJS backend server for PowerGuard smart outlet management system with PostgreSQL and Public EMQX MQTT integration.
 
 ## Features
 
 - **PostgreSQL Database**: Azure-hosted database with Prisma ORM
-- **MQTT Integration**: Real-time communication with STM32 devices via HiveMQ
+- **MQTT Integration**: Real-time communication with STM32 devices via Public EMQX
 - **RESTful API**: Endpoints for managing power strips, outlets, and usage data
 - **Real-time Data**: Automatic storage of power consumption data from MQTT messages
 
@@ -15,15 +15,15 @@ NestJS backend server for PowerGuard smart outlet management system with Postgre
 - **Language**: TypeScript
 - **Database**: PostgreSQL (Azure)
 - **ORM**: Prisma
-- **MQTT**: HiveMQ Cloud
-- **Protocol**: MQTT over TLS (mqtts)
+- **MQTT**: Public EMQX
+- **Protocol**: MQTT
 
 ## Prerequisites
 
 - Node.js 18+
 - npm or yarn
 - Access to Azure PostgreSQL database
-- Access to HiveMQ Cloud MQTT broker
+- Access to Public EMQX MQTT broker (broker.emqx.io)
 
 ## Installation
 
@@ -159,7 +159,7 @@ npx prisma db pull
 ### 2. Start server and check logs for:
 ```
 Database connected successfully
-Connected to HiveMQ MQTT broker
+Connected to EMQX MQTT broker
 Subscribed to powerguard/+/data
 ```
 
@@ -171,7 +171,7 @@ curl http://localhost:3000/powerstrips
 
 ## When STM32 is Ready
 
-Once you configure your STM32 to publish to HiveMQ:
+Once you configure your STM32 to publish to Public EMQX:
 
 1. **Publish power data** to topic: `powerguard/{outlet_id}/data`
 2. Backend will automatically receive and store in database

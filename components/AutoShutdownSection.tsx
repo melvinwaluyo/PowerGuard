@@ -11,6 +11,7 @@ interface AutoShutdownSectionProps {
   countdownRemainingSeconds: number;
   geofenceZone: "INSIDE" | "OUTSIDE";
   pendingRequest?: { requestId: number; initiatedAt: string; expiresAt: string | null } | null;
+  hasActiveOutlets: boolean;
   onShutdownTimeChange: (timeInSeconds: number) => Promise<void> | void;
   isSaving?: boolean;
 }
@@ -21,6 +22,7 @@ export default function AutoShutdownSection({
   countdownRemainingSeconds,
   geofenceZone,
   pendingRequest,
+  hasActiveOutlets,
   onShutdownTimeChange,
   isSaving = false,
 }: AutoShutdownSectionProps) {
@@ -139,7 +141,6 @@ export default function AutoShutdownSection({
                   <Ionicons name="timer-outline" size={24} color="#fff" />
                 </View>
                 <View>
-                  <Text className="text-xs text-[#6B7280] mb-1">Durasi Default</Text>
                   <Text className="text-[32px] font-bold text-[#0F0E41] tracking-wider">
                     {String(currentTimer.hours).padStart(2, "0")}:
                     {String(currentTimer.minutes).padStart(2, "0")}:
@@ -154,6 +155,16 @@ export default function AutoShutdownSection({
                 <Text className="mt-2 text-sm text-[#4B5563] font-semibold">
                   Menunggu respon: outlet tidak dimatikan otomatis.
                 </Text>
+              ) : geofenceZone === "OUTSIDE" && !hasActiveOutlets ? (
+                <View className="mt-3 bg-[#FEF3C7] rounded-lg p-3">
+                  <View className="flex-row items-center">
+                    <Ionicons name="information-circle" size={16} color="#B45309" style={{ marginRight: 6 }} />
+                    <Text className="text-xs text-[#92400E] font-semibold">Timer tidak aktif</Text>
+                  </View>
+                  <Text className="text-xs text-[#92400E] mt-1">
+                    Semua outlet dalam keadaan OFF. Timer akan dimulai otomatis ketika ada outlet yang ON.
+                  </Text>
+                </View>
               ) : null}
             </View>
           )}

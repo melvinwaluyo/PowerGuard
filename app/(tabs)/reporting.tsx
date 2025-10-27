@@ -4,6 +4,7 @@ import { ReportHeader } from "@/components/ReportHeader";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState, useEffect, useRef } from "react";
 import { Platform, ScrollView, Text, TouchableOpacity, View, ActivityIndicator, Alert, Animated, FlatList, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
+import { useFocusEffect } from "expo-router";
 import {
   Bar,
   BarChart,
@@ -208,6 +209,15 @@ const PowerUsageChart: React.FC = () => {
   const { outlets } = useOutlets();
   const flatListRef = useRef<FlatList>(null);
   const [containerWidth, setContainerWidth] = useState(600); // Default max width
+  const [chartKey, setChartKey] = useState(0); // Key to force chart remount
+
+  // Reset chart when navigating back to this screen
+  useFocusEffect(
+    React.useCallback(() => {
+      // Force chart to remount and clear tooltip when screen gains focus
+      setChartKey(prev => prev + 1);
+    }, [])
+  );
 
   // Animation for refresh button
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
@@ -656,7 +666,7 @@ const PowerUsageChart: React.FC = () => {
                 offset: containerWidth * index,
                 index,
               })}
-              renderItem={({ item: page }) => {
+              renderItem={({ item: page, index }) => {
                 const pageData = page.data;
                 const pageMaxValue = calculateMaxValue(pageData);
 
@@ -715,7 +725,12 @@ const PowerUsageChart: React.FC = () => {
                         </ResponsiveContainer>
                       </View>
                     ) : (
-                      <MobileBarChart data={pageData} maxValue={pageMaxValue} unit="kWh" />
+                      <MobileBarChart
+                        key={`${period}-${index}-${currentPageIndex}-${chartKey}`}
+                        data={pageData}
+                        maxValue={pageMaxValue}
+                        unit="kWh"
+                      />
                     )}
                   </View>
                 );
