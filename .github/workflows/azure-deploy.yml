@@ -3,8 +3,7 @@ name: Deploy Backend to Azure App Service
 on:
   push:
     branches:
-      - Melvin  # Deploys when you push to Melvin branch
-      - master  # Also deploys from master if you merge
+      - master  # Only deploys when pushing to master branch
     paths:
       - 'backend/**'
       - '.github/workflows/azure-deploy.yml'
