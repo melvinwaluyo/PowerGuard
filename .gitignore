@@ -52,3 +52,4 @@ backend/generated/
 backend/node_modules/
 
 CLAUDE.md
+AGENTS.md

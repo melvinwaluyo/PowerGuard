@@ -6,6 +6,9 @@ export class OutletsService {
   constructor(private prisma: PrismaService) {}
 
   async findAll() {
+    // Only return usage data from the last 30 seconds (real-time data only)
+    const thirtySecondsAgo = new Date(Date.now() - 30000);
+
     return this.prisma.outlet.findMany({
       orderBy: [
         { index: 'asc' },
@@ -14,6 +17,11 @@ export class OutletsService {
       include: {
         powerStrip: true,
         usageLogs: {
+          where: {
+            createdAt: {
+              gte: thirtySecondsAgo,
+            },
+          },
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
@@ -22,11 +30,19 @@ export class OutletsService {
   }
 
   async findOne(id: number) {
+    // Only return usage data from the last 30 seconds (real-time data only)
+    const thirtySecondsAgo = new Date(Date.now() - 30000);
+
     return this.prisma.outlet.findUnique({
       where: { outletID: id },
       include: {
         powerStrip: true,
         usageLogs: {
+          where: {
+            createdAt: {
+              gte: thirtySecondsAgo,
+            },
+          },
           orderBy: { createdAt: 'desc' },
           take: 10,
         },
