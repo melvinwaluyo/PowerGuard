@@ -1,0 +1,45 @@
+name: Trigger auto deployment for powerguard-backend
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ master ]
+    paths:
+    - '**'
+    - '.github/workflows/powerguard-backend-AutoDeployTrigger-7e741399-6162-494b-9bc6-a59863ef59de.yml'
+
+  # Allow manual trigger 
+  workflow_dispatch:
+      
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.POWERGUARDBACKEND_AZURE_CREDENTIALS }}
+
+      - name: Build and push container image to registry
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          appSourcePath: ${{ github.workspace }}
+          _dockerfilePathKey_: _dockerfilePath_
+          _targetLabelKey_: _targetLabel_
+          registryUrl: ghcr.io
+          registryUsername: ${{ secrets.POWERGUARDBACKEND_REGISTRY_USERNAME }}
+          registryPassword: ${{ secrets.POWERGUARDBACKEND_REGISTRY_PASSWORD }}
+          containerAppName: powerguard-backend
+          resourceGroup: PowerGuard
+          imageToBuild: ghcr.io/ghcr.io/melvinwaluyo/powerguard/powerguard-backend:${{ github.sha }}
+          
+            
+
+     
+
