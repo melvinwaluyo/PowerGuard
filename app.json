@@ -23,7 +23,9 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "PowerGuard needs your location to set your home address for geofencing features.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["audio"],
+        "NSMicrophoneUsageDescription": "PowerGuard needs access to play alert sounds when you leave home with outlets still on."
       }
     },
     "android": {
@@ -47,7 +49,10 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.USE_FULL_SCREEN_INTENT"
       ],
       "package": "com.anonymous.PowerGuard"
     },
@@ -62,6 +67,15 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "PowerGuard needs your location to set your home address for geofencing features."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icons/adaptive-icon.png",
+          "color": "#0F0E41",
+          "sounds": [],
+          "mode": "production"
         }
       ],
       [

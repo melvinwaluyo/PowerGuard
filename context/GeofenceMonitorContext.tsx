@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
 import { AppState, Alert } from "react-native";
 import { api, GeofenceSetting, GeofenceEvaluationResponse } from "@/services/api";
 
@@ -31,6 +32,7 @@ interface GeofenceMonitorContextValue {
   updateSettingsLocal: (updates: Partial<GeofenceSetting>) => void;
   confirmPendingRequest: () => Promise<void>;
   cancelPendingRequest: () => Promise<void>;
+  sendGeofenceAlert: (activeOutletCount: number, timerSeconds: number, reason: 'left_zone' | 'turned_on_outside') => Promise<void>;
 }
 
 const INITIAL_STATUS: GeofenceStatusState = {
@@ -43,6 +45,16 @@ const INITIAL_STATUS: GeofenceStatusState = {
 
 const GeofenceMonitorContext = createContext<GeofenceMonitorContextValue | null>(null);
 
+// Configure notification handler
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    priority: Notifications.AndroidNotificationPriority.MAX,
+  }),
+});
+
 export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<GeofenceSetting | null>(null);
   const [status, setStatus] = useState<GeofenceStatusState>(INITIAL_STATUS);
@@ -53,6 +65,8 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
   const lastReportTimestampRef = useRef<number>(0);
   const lastCoordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const shownRequestRef = useRef<number | null>(null);
+  const previousZoneRef = useRef<GeofenceZone>("INSIDE");
+  const lastNotificationSentRef = useRef<number>(0); // Timestamp of last notification
 
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -64,8 +78,97 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
     return Math.max(0, Math.round((endsAt - Date.now()) / 1000));
   }, []);
 
+  // Request notification permissions
+  const requestNotificationPermissions = useCallback(async () => {
+    try {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      return finalStatus === 'granted';
+    } catch (error) {
+      console.error('Failed to get notification permissions:', error);
+      return false;
+    }
+  }, []);
+
+  // Play loud alert sound using expo-audio
+  const playAlertSound = useCallback(async () => {
+    try {
+      // Use a loud alarm sound URL
+      const soundUri = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
+
+      // For now, we'll rely on the notification sound
+      // expo-audio requires a different approach with useAudioPlayer hook
+      console.log('Alert sound triggered (using notification sound)');
+    } catch (error) {
+      console.error('Failed to play alert sound:', error);
+    }
+  }, []);
+
+  // Send notification when leaving geofence or turning on outlets outside
+  const sendGeofenceAlert = useCallback(async (activeOutletCount: number, timerSeconds: number, reason: 'left_zone' | 'turned_on_outside' = 'left_zone') => {
+    // Don't send if geofencing is disabled
+    if (!settings?.isEnabled) {
+      console.log('Geofencing disabled, skipping notification');
+      return;
+    }
+
+    // Prevent notification spam - only send once per 10 seconds
+    const now = Date.now();
+    if (now - lastNotificationSentRef.current < 10000) {
+      console.log('Notification cooldown active, skipping');
+      return;
+    }
+
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      console.log('Notification permissions not granted');
+      return;
+    }
+
+    const minutes = Math.floor(timerSeconds / 60);
+    const seconds = timerSeconds % 60;
+    const timerText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+    const bodyText = reason === 'left_zone'
+      ? `⚠️ You left home with ${activeOutletCount} outlet${activeOutletCount > 1 ? 's' : ''} still ON! Auto-shutdown in ${timerText}.`
+      : `⚠️ You turned ON ${activeOutletCount} outlet${activeOutletCount > 1 ? 's' : ''} while outside home! Auto-shutdown in ${timerText}.`;
+
+    try {
+      // Play loud sound
+      await playAlertSound();
+
+      // Send notification with LOUD sound configuration
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🚨 PowerGuard ALERT',
+          body: bodyText + ' Turn off manually or wait for timer.',
+          sound: true, // Use boolean for default LOUD sound
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          vibrate: [0, 500, 200, 500, 200, 500], // Longer vibration pattern
+          sticky: true, // Keep notification visible
+        },
+        trigger: null, // Show immediately
+      });
+
+      // Update last notification timestamp
+      lastNotificationSentRef.current = now;
+      console.log(`Geofence alert sent: ${reason}, outlets: ${activeOutletCount}`);
+    } catch (error) {
+      console.error('Failed to send geofence alert:', error);
+    }
+  }, [requestNotificationPermissions, playAlertSound, settings?.isEnabled]);
+
   const updateStatusFromEvaluation = useCallback(
     (evaluation: GeofenceEvaluationResponse) => {
+      const previousZone = previousZoneRef.current;
+      const newZone = evaluation.zone;
+
       setStatus((prev) => {
         const nextEndsAt =
           evaluation.countdownEndsAt ?? (evaluation.countdownIsActive ? prev.countdownEndsAt : null);
@@ -79,6 +182,27 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
         };
       });
 
+      // Detect zone change from INSIDE to OUTSIDE (user left home)
+      if (previousZone === "INSIDE" && newZone === "OUTSIDE" && evaluation.countdownIsActive) {
+        // Get active outlet count from triggered outlets
+        const activeOutletCount = evaluation.triggeredOutlets?.length || 0;
+        if (activeOutletCount > 0) {
+          // Send alert with sound - user left home with outlets ON
+          sendGeofenceAlert(activeOutletCount, evaluation.autoShutdownSeconds || 900, 'left_zone');
+        }
+      }
+
+      // Detect zone change from OUTSIDE to INSIDE (user entered home)
+      if (previousZone === "OUTSIDE" && newZone === "INSIDE") {
+        // Reset notification cooldown when entering zone
+        // This allows notification to be sent again if user leaves again
+        console.log('User entered zone, resetting notification cooldown');
+        lastNotificationSentRef.current = 0;
+      }
+
+      // Update previous zone
+      previousZoneRef.current = newZone;
+
       if (evaluation.pendingRequest) {
         setPendingRequest({
           requestId: evaluation.pendingRequest.requestId,
@@ -91,7 +215,7 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
         shownRequestRef.current = null;
       }
     },
-    [computeRemainingSeconds],
+    [computeRemainingSeconds, sendGeofenceAlert],
   );
 
   const clearIntervals = useCallback(() => {
@@ -348,6 +472,7 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
       updateSettingsLocal,
       confirmPendingRequest,
       cancelPendingRequest,
+      sendGeofenceAlert,
     }),
     [
       settings,
@@ -358,6 +483,7 @@ export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
       updateSettingsLocal,
       confirmPendingRequest,
       cancelPendingRequest,
+      sendGeofenceAlert,
     ],
   );
 

@@ -26,51 +26,75 @@ export default function PinLocationScreen() {
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
   const [isInitialized, setIsInitialized] = useState(hasInitialLocation);
   const [currentZoom, setCurrentZoom] = useState(15); // Track current zoom level
+  const geocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const topInset =
     (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0) +
     BASE_TOP_PADDING;
 
   const handleLocationChange = async (lat: number, lng: number) => {
+    // Update location immediately
     setSelectedLocation(prev => ({ ...prev, latitude: lat, longitude: lng }));
 
-    // Reverse geocode to get address (not available on web in SDK 49+)
-    try {
-      setIsLoadingAddress(true);
-
-      if (Platform.OS === 'web') {
-        // For web, just show coordinates
-        setSelectedLocation({
-          latitude: lat,
-          longitude: lng,
-          address: `Lat: ${lat.toFixed(6)}`,
-          city: `Lng: ${lng.toFixed(6)}`,
-        });
-      } else {
-        // For native, use reverse geocoding
-        const [geocode] = await Location.reverseGeocodeAsync({
-          latitude: lat,
-          longitude: lng,
-        });
-
-        setSelectedLocation({
-          latitude: lat,
-          longitude: lng,
-          address: `${geocode.streetNumber || ''} ${geocode.street || ''}`.trim() || 'Unknown Location',
-          city: `${geocode.city || ''}, ${geocode.region || ''}`.trim(),
-        });
-      }
-
-      setIsLoadingAddress(false);
-    } catch (error) {
-      console.error('Error geocoding:', error);
-      setSelectedLocation(prev => ({
-        ...prev,
-        address: 'Unknown Location',
-        city: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
-      }));
-      setIsLoadingAddress(false);
+    // Clear previous geocoding timeout
+    if (geocodeTimeoutRef.current) {
+      clearTimeout(geocodeTimeoutRef.current);
     }
+
+    // Debounce geocoding to prevent rate limiting (wait 1 second after last change)
+    geocodeTimeoutRef.current = setTimeout(async () => {
+      // Reverse geocode to get address (not available on web in SDK 49+)
+      try {
+        setIsLoadingAddress(true);
+
+        if (Platform.OS === 'web') {
+          // For web, just show coordinates
+          setSelectedLocation({
+            latitude: lat,
+            longitude: lng,
+            address: `Lat: ${lat.toFixed(6)}`,
+            city: `Lng: ${lng.toFixed(6)}`,
+          });
+        } else {
+          // For native, use reverse geocoding with rate limit protection
+          try {
+            const [geocode] = await Location.reverseGeocodeAsync({
+              latitude: lat,
+              longitude: lng,
+            });
+
+            setSelectedLocation({
+              latitude: lat,
+              longitude: lng,
+              address: `${geocode.streetNumber || ''} ${geocode.street || ''}`.trim() || 'Unknown Location',
+              city: `${geocode.city || ''}, ${geocode.region || ''}`.trim(),
+            });
+          } catch (geocodeError: any) {
+            // Handle rate limit gracefully
+            if (geocodeError?.message?.includes('rate limit')) {
+              console.log('Geocoding rate limit hit, showing coordinates instead');
+              setSelectedLocation(prev => ({
+                ...prev,
+                address: `Location selected`,
+                city: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+              }));
+            } else {
+              throw geocodeError;
+            }
+          }
+        }
+
+        setIsLoadingAddress(false);
+      } catch (error) {
+        console.error('Error geocoding:', error);
+        setSelectedLocation(prev => ({
+          ...prev,
+          address: 'Location selected',
+          city: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+        }));
+        setIsLoadingAddress(false);
+      }
+    }, 1000); // Wait 1 second after user stops changing location
   };
 
   const handleSaveLocation = () => {
@@ -128,6 +152,15 @@ export default function PinLocationScreen() {
       handleLocationChange(selectedLocation.latitude, selectedLocation.longitude);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cleanup geocoding timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+      }
+    };
   }, []);
 
   if (Platform.OS === "web") {
