@@ -42,7 +42,6 @@ jobs:
           cp -r dist ../deploy/
           cp -r prisma ../deploy/
           cp package*.json ../deploy/
-          cp .deployment ../deploy/ || true
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
