@@ -152,6 +152,19 @@ export class GeofenceAutomationService {
 
         for (const outlet of outlets) {
           try {
+            // Double-check outlet is still ON before starting timer (prevents race conditions)
+            const currentState = await this.prisma.outlet.findUnique({
+              where: { outletID: outlet.outletID },
+              select: { state: true }
+            });
+
+            if (!currentState?.state) {
+              this.logger.warn(
+                `Skipping geofence timer for outlet ${outlet.outletID}: outlet is OFF`
+              );
+              continue;
+            }
+
             await this.timerService.startTimer(outlet.outletID, autoShutdownSeconds, {
               source: TimerSource.GEOFENCE,
               note: 'Geofence timer started (left radius)',

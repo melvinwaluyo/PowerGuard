@@ -209,7 +209,8 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       const previousCountdownActive = status.countdownIsActive;
 
       // Detect zone change from INSIDE to OUTSIDE (user left home)
-      if (previousZone === "INSIDE" && newZone === "OUTSIDE" && evaluation.countdownIsActive) {
+      const justLeftZone = previousZone === "INSIDE" && newZone === "OUTSIDE" && evaluation.countdownIsActive;
+      if (justLeftZone) {
         // Get active outlet count from triggered outlets
         const activeOutletCount = evaluation.triggeredOutlets?.length || 0;
         if (activeOutletCount > 0) {
@@ -228,7 +229,9 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       }
 
       // Detect turning on outlets while already outside (countdown activated while zone stays OUTSIDE)
+      // BUT: Skip this check if we just sent a "left_zone" notification (prevents duplicate)
       if (
+        !justLeftZone &&
         previousZone === "OUTSIDE" &&
         !previousCountdownActive &&
         evaluation.countdownIsActive &&

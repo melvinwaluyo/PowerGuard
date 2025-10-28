@@ -2,7 +2,7 @@ require('dotenv').config();
 const mqtt = require('mqtt');
 
 /**
- * MQTT Simulator - Simulates STM32 sending power data via MQTT
+ * MQTT Simulator - Simulates STM32 behavior including timers
  * Use this to test the app before STM32 is ready
  *
  * This simulator publishes to the SAME MQTT topics that the STM32 will use.
@@ -10,7 +10,10 @@ const mqtt = require('mqtt');
  *
  * Topics used (same as STM32):
  * - Publish to: powerguard/{outletId}/data
+ * - Publish to: powerguard/{outletId}/timer/status
  * - Subscribe to: powerguard/{outletId}/control
+ * - Subscribe to: powerguard/{outletId}/timer/start
+ * - Subscribe to: powerguard/{outletId}/timer/stop
  */
 
 class MqttSimulator {
@@ -19,6 +22,7 @@ class MqttSimulator {
     this.intervalId = null;
     this.lastEnergy = new Map(); // Track energy per outlet
     this.outlets = []; // Will be loaded from config
+    this.timers = new Map(); // Track active timers: outletId -> { timeout, statusInterval, endsAt, duration, source }
   }
 
   async connect() {
@@ -105,40 +109,196 @@ class MqttSimulator {
   }
 
   /**
-   * Subscribe to control topics to receive ON/OFF commands
-   * This simulates STM32 listening for control commands
+   * Subscribe to control and timer topics
+   * This simulates STM32 listening for commands
    */
   subscribeToControlTopics() {
-    const topic = 'powerguard/+/control';
-    this.client.subscribe(topic, (err) => {
-      if (err) {
-        console.error('❌ Failed to subscribe to control topics:', err);
-      } else {
-        console.log(`👂 Subscribed to ${topic} (listening for outlet control commands)`);
-      }
+    const topics = [
+      'powerguard/+/control',
+      'powerguard/+/timer/start',
+      'powerguard/+/timer/stop'
+    ];
+
+    topics.forEach(topic => {
+      this.client.subscribe(topic, (err) => {
+        if (err) {
+          console.error(`❌ Failed to subscribe to ${topic}:`, err);
+        } else {
+          console.log(`👂 Subscribed to ${topic}`);
+        }
+      });
     });
   }
 
   /**
-   * Handle control messages (ON/OFF commands)
+   * Handle control and timer messages
    */
   handleControlMessage(topic, message) {
     try {
       const data = JSON.parse(message.toString());
       const parts = topic.split('/');
 
-      if (parts[0] === 'powerguard' && parts[2] === 'control') {
-        const outletId = parseInt(parts[1]);
-        const outlet = this.outlets.find(o => o.id === outletId);
+      if (parts[0] !== 'powerguard') return;
 
+      const outletId = parseInt(parts[1]);
+
+      // Handle outlet control (ON/OFF)
+      if (parts[2] === 'control') {
+        const outlet = this.outlets.find(o => o.id === outletId);
         if (outlet) {
           outlet.state = data.state;
           console.log(`🔧 Outlet ${outletId} turned ${data.state ? 'ON' : 'OFF'}`);
+
+          // If turned off and timer is active, stop the timer
+          if (!data.state && this.timers.has(outletId)) {
+            this.stopTimer(outletId, 'power_off');
+          }
         }
       }
+
+      // Handle timer start
+      if (parts[2] === 'timer' && parts[3] === 'start') {
+        this.startTimer(outletId, data.durationSeconds, data.source || 'MANUAL');
+      }
+
+      // Handle timer stop
+      if (parts[2] === 'timer' && parts[3] === 'stop') {
+        this.stopTimer(outletId, data.reason || 'cancelled');
+      }
     } catch (error) {
-      console.error('❌ Error processing control message:', error.message);
+      console.error('❌ Error processing message:', error.message);
     }
+  }
+
+  /**
+   * Start a timer for an outlet (simulates STM32 timer)
+   */
+  startTimer(outletId, durationSeconds, source) {
+    console.log(`⏱️  Starting timer for outlet ${outletId}: ${durationSeconds}s (source: ${source})`);
+
+    // Cancel existing timer if any
+    if (this.timers.has(outletId)) {
+      this.stopTimer(outletId, 'replaced');
+    }
+
+    const endsAt = Date.now() + (durationSeconds * 1000);
+
+    // Set timeout to turn off outlet when timer completes
+    const timeout = setTimeout(() => {
+      this.completeTimer(outletId);
+    }, durationSeconds * 1000);
+
+    // Publish status updates every 10 seconds
+    const statusInterval = setInterval(() => {
+      this.publishTimerStatus(outletId);
+    }, 10000);
+
+    // Store timer info
+    this.timers.set(outletId, {
+      timeout,
+      statusInterval,
+      endsAt,
+      duration: durationSeconds,
+      source
+    });
+
+    // Publish initial status immediately
+    this.publishTimerStatus(outletId);
+  }
+
+  /**
+   * Stop a timer for an outlet
+   */
+  stopTimer(outletId, reason) {
+    const timer = this.timers.get(outletId);
+    if (!timer) return;
+
+    console.log(`⏹️  Stopping timer for outlet ${outletId} (reason: ${reason})`);
+
+    // Clear timeout and interval
+    clearTimeout(timer.timeout);
+    clearInterval(timer.statusInterval);
+    this.timers.delete(outletId);
+
+    // Publish final status (inactive)
+    this.publishTimerStatus(outletId);
+  }
+
+  /**
+   * Complete a timer (turn off outlet)
+   * This simulates STM32 behavior: when timer expires, physically turn off relay
+   */
+  completeTimer(outletId) {
+    console.log(`✅ Timer completed for outlet ${outletId} - turning OFF`);
+
+    const timer = this.timers.get(outletId);
+    if (!timer) return;
+
+    // Save timer info before clearing (needed for final status message)
+    const completedTimerInfo = {
+      duration: timer.duration,
+      source: timer.source
+    };
+
+    // Clear the timer
+    clearInterval(timer.statusInterval);
+    this.timers.delete(outletId);
+
+    // Turn off the outlet (simulating STM32 turning off physical relay)
+    const outlet = this.outlets.find(o => o.id === outletId);
+    if (outlet) {
+      outlet.state = false;
+    }
+
+    // Publish final timer status with completion info
+    // Backend will detect completion from this and update database + create notification
+    this.publishTimerStatus(outletId, completedTimerInfo);
+
+    console.log(`💡 Outlet ${outletId} is now OFF (timer completed)`);
+  }
+
+  /**
+   * Publish timer status to MQTT (simulates STM32 status updates)
+   * @param {number} outletId - Outlet ID
+   * @param {object} completedTimerInfo - Optional timer info for completion message (duration, source)
+   */
+  publishTimerStatus(outletId, completedTimerInfo = null) {
+    const timer = this.timers.get(outletId);
+    const topic = `powerguard/${outletId}/timer/status`;
+
+    let message;
+    if (timer) {
+      // Timer is active - send current status
+      const remainingSeconds = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
+      message = JSON.stringify({
+        isActive: true,
+        remainingSeconds,
+        durationSeconds: timer.duration,
+        source: timer.source
+      });
+    } else if (completedTimerInfo) {
+      // Timer just completed - send final status with completion info
+      message = JSON.stringify({
+        isActive: false,
+        remainingSeconds: 0,
+        durationSeconds: completedTimerInfo.duration, // IMPORTANT: Keep duration for backend detection
+        source: completedTimerInfo.source
+      });
+    } else {
+      // No timer and no completion info - timer is just inactive
+      message = JSON.stringify({
+        isActive: false,
+        remainingSeconds: 0,
+        durationSeconds: 0,
+        source: null
+      });
+    }
+
+    this.client.publish(topic, message, (err) => {
+      if (err) {
+        console.error(`❌ Failed to publish timer status to ${topic}:`, err.message);
+      }
+    });
   }
 
   /**
@@ -219,6 +379,13 @@ class MqttSimulator {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+
+    // Clean up all active timers
+    for (const [outletId, timer] of this.timers.entries()) {
+      clearTimeout(timer.timeout);
+      clearInterval(timer.statusInterval);
+    }
+    this.timers.clear();
 
     if (this.client) {
       this.client.end();
