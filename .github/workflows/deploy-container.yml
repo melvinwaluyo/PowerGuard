@@ -62,9 +62,16 @@ jobs:
           containerAppName: ${{ env.CONTAINER_APP_NAME }}
           resourceGroup: ${{ env.RESOURCE_GROUP }}
           imageToDeploy: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          environmentVariables: |
-            DATABASE_URL=secretref:database-url
-            DIRECT_URL=secretref:direct-url
-            MQTT_SERVER=${{ secrets.MQTT_SERVER }}
-            MQTT_PORT=${{ secrets.MQTT_PORT }}
-            NODE_ENV=production
+
+      - name: Update Environment Variables
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --set-env-vars \
+              "DATABASE_URL=secretref:database-url" \
+              "DIRECT_URL=secretref:direct-url" \
+              "MQTT_SERVER=${{ secrets.MQTT_SERVER }}" \
+              "MQTT_PORT=${{ secrets.MQTT_PORT }}" \
+              "PORT=8080" \
+              "NODE_ENV=production"

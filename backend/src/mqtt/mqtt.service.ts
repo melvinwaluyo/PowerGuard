@@ -19,10 +19,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const username = this.configService.get<string>('MQTT_USERNAME');
     const password = this.configService.get<string>('MQTT_PASSWORD');
 
-    this.client = mqtt.connect(`mqtt://${server}:${port}`, {
-      username,
-      password,
-    });
+    const mqttOptions: any = {};
+
+    // Only add credentials if they are provided
+    if (username) {
+      mqttOptions.username = username;
+    }
+    if (password) {
+      mqttOptions.password = password;
+    }
+
+    this.client = mqtt.connect(`mqtt://${server}:${port}`, mqttOptions);
 
     this.client.on('connect', () => {
       console.log('Connected to EMQX MQTT broker');
