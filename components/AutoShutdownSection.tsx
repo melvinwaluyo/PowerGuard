@@ -98,12 +98,12 @@ export default function AutoShutdownSection({
               className="text-[11px] font-semibold"
               style={{ color: countdownIsActive ? "#B45309" : "#1E3A8A" }}
             >
-              {countdownIsActive ? "Countdown aktif" : "Standby"}
+              {countdownIsActive ? "Countdown active" : "Standby"}
             </Text>
           </View>
         </View>
         <Text className="text-sm text-[#6B7280] mb-5">
-          Timer berjalan otomatis saat Anda meninggalkan radius geofence
+          Timer runs automatically when you leave geofence radius
         </Text>
 
         <View className="items-center">
