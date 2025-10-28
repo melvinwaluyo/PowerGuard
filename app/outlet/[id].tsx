@@ -16,6 +16,7 @@ import {
   TimerSource,
 } from "@/types/outlet";
 import { TimerDurationValue } from "@/types/timer";
+import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
 
 const LOG_CATEGORY_META: Record<
   OutletLogCategory,
@@ -53,28 +54,28 @@ const formatSecondsAsClock = (seconds: number): string => {
 
 const TIMER_STATUS_COPY: Record<TimerLogStatus, { action: string; detail: (log: any) => string }> = {
   STARTED: {
-    action: "Timer dimulai",
-    detail: (log) => `Durasi ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
+    action: "Timer started",
+    detail: (log) => `Duration ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
   },
   STOPPED: {
-    action: "Timer dihentikan",
-    detail: (log) => `Sisa ${formatSecondsAsClock(log.remainingSeconds ?? 0)}`,
+    action: "Timer stopped",
+    detail: (log) => `Remaining ${formatSecondsAsClock(log.remainingSeconds ?? 0)}`,
   },
   COMPLETED: {
-    action: "Timer selesai",
-    detail: () => "Relay dimatikan otomatis",
+    action: "Timer completed",
+    detail: () => "Relay turned off automatically",
   },
   AUTO_CANCELLED: {
-    action: "Timer dibatalkan otomatis",
-    detail: () => "Terjadi kendala saat mematikan relay",
+    action: "Timer auto-cancelled",
+    detail: () => "Issue occurred while turning off relay",
   },
   POWER_OFF: {
-    action: "Power dimatikan",
-    detail: () => "Timer dihentikan karena outlet dimatikan",
+    action: "Power turned off",
+    detail: () => "Timer stopped because outlet was turned off",
   },
   REPLACED: {
-    action: "Timer diganti",
-    detail: (log) => `Durasi baru ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
+    action: "Timer replaced",
+    detail: (log) => `New duration ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
   },
 };
 
@@ -117,6 +118,7 @@ export default function OutletDetailsScreen() {
 
   const { getOutletById, toggleOutlet, updateOutlet, renameOutlet, refreshOutlets, togglingOutlets } = useOutlets();
   const outlet = Number.isFinite(outletId) ? getOutletById(outletId) : undefined;
+  const { status: geofenceStatus } = useGeofenceMonitor();
 
   const [activeTab, setActiveTab] = useState<DetailTab>("status");
   const [renameModalVisible, setRenameModalVisible] = useState(false);
@@ -205,7 +207,18 @@ export default function OutletDetailsScreen() {
     return () => clearInterval(interval);
   }, [outletId, loadTimerLogs]);
 
+  const isGeofenceTimerActive =
+    Boolean(timerState?.isActive) &&
+    timerState?.source === "GEOFENCE" &&
+    geofenceStatus.countdownIsActive &&
+    Boolean(geofenceStatus.countdownEndsAt);
+
   useEffect(() => {
+    if (isGeofenceTimerActive) {
+      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
+      return;
+    }
+
     if (!timerState) {
       setCountdownSeconds(timerPresetSeconds);
       return;
@@ -238,7 +251,13 @@ export default function OutletDetailsScreen() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timerState, timerPresetSeconds, refreshTimerStatus, loadTimerLogs]);
+  }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds, timerState, timerPresetSeconds, refreshTimerStatus, loadTimerLogs]);
+
+  useEffect(() => {
+    if (isGeofenceTimerActive) {
+      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
+    }
+  }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds]);
 
   const handleTimerDurationChange = useCallback(
     async (nextSeconds: number) => {
@@ -303,7 +322,7 @@ export default function OutletDetailsScreen() {
   const handleStartTimer = useCallback(async () => {
     if (!outlet || !Number.isFinite(outletId)) return;
     if (!outlet.isOn) {
-      Alert.alert("Timer", "Nyalakan outlet terlebih dahulu sebelum memulai timer.");
+      Alert.alert("Timer", "Turn on outlet first before starting timer.");
       return;
     }
 
@@ -317,7 +336,7 @@ export default function OutletDetailsScreen() {
       await refreshOutlets();
     } catch (error) {
       console.error("Failed to start timer:", error);
-      Alert.alert("Timer", "Gagal memulai timer. Silakan coba lagi.");
+      Alert.alert("Timer", "Failed to start timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
@@ -334,7 +353,7 @@ export default function OutletDetailsScreen() {
       await refreshOutlets();
     } catch (error) {
       console.error("Failed to stop timer:", error);
-      Alert.alert("Timer", "Gagal menghentikan timer. Silakan coba lagi.");
+      Alert.alert("Timer", "Failed to stop timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
@@ -394,14 +413,14 @@ export default function OutletDetailsScreen() {
 
   const isTimerEnabled = outlet.isOn;
   const timerStatusText = !isTimerEnabled
-    ? "Nyalakan outlet untuk menggunakan timer"
+    ? "Turn on outlet to use timer"
     : timerState?.isActive
       ? timerState.source === "GEOFENCE"
-        ? "Timer geofence berjalan"
-        : "Timer berjalan"
+        ? "Geofence timer running"
+        : "Timer running"
       : timerState?.source === "GEOFENCE"
-        ? "Timer geofence siap"
-        : `Durasi ${formatSecondsAsClock(timerPresetSeconds)}`;
+        ? "Geofence timer ready"
+        : `Duration ${formatSecondsAsClock(timerPresetSeconds)}`;
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "status", label: "Status" },
@@ -587,7 +606,7 @@ function StatusSection({
       await onTimerDurationChange(seconds);
       setModalVisible(false);
     } catch (error) {
-      Alert.alert("Timer", "Gagal memperbarui durasi timer. Silakan coba lagi.");
+      Alert.alert("Timer", "Failed to update timer duration. Please try again.");
     } finally {
       setSavingPreset(false);
     }

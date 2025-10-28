@@ -80,23 +80,23 @@ export class GeofenceController {
   }
 
   @Get('powerstrip/:id/auto-shutdown/pending')
-  @ApiOperation({ summary: 'Daftar permintaan auto shutdown yang belum diproses' })
+  @ApiOperation({ summary: 'List of unprocessed auto-shutdown requests' })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
-  @ApiResponse({ status: 200, description: 'Daftar permintaan pending' })
+  @ApiResponse({ status: 200, description: 'List of pending requests' })
   pendingRequests(@Param('id', ParseIntPipe) id: number) {
     return this.autoShutdownService.getPendingRequests(id);
   }
 
   @Post('auto-shutdown/:requestId/confirm')
-  @ApiOperation({ summary: 'Konfirmasi auto shutdown dan matikan outlet' })
-  @ApiResponse({ status: 200, description: 'Auto shutdown dikonfirmasi' })
+  @ApiOperation({ summary: 'Confirm auto-shutdown and turn off outlets' })
+  @ApiResponse({ status: 200, description: 'Auto-shutdown confirmed' })
   confirmAutoShutdown(@Param('requestId', ParseIntPipe) requestId: number) {
     return this.autoShutdownService.confirm(requestId);
   }
 
   @Post('auto-shutdown/:requestId/cancel')
-  @ApiOperation({ summary: 'Batalkan auto shutdown, biarkan outlet tetap menyala' })
-  @ApiResponse({ status: 200, description: 'Auto shutdown dibatalkan' })
+  @ApiOperation({ summary: 'Cancel auto-shutdown, keep outlets on' })
+  @ApiResponse({ status: 200, description: 'Auto-shutdown cancelled' })
   cancelAutoShutdown(@Param('requestId', ParseIntPipe) requestId: number) {
     return this.autoShutdownService.cancel(requestId);
   }

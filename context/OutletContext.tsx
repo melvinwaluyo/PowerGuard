@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import { Outlet, TimerSource } from "@/types/outlet";
 import { api } from "@/services/api";
 import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
+import * as Notifications from "expo-notifications";
 
 interface OutletContextValue {
   outlets: Outlet[];
@@ -76,9 +77,37 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [togglingOutlets, setTogglingOutlets] = useState<Set<number>>(new Set());
+  const lastNotificationCheckRef = useRef<string>(new Date().toISOString());
+  const lastGeofenceShutdownNotificationRef = useRef<{ timestamp: number; message: string | null; outletCount: number }>({
+    timestamp: 0,
+    message: null,
+    outletCount: 0,
+  });
+  const geofenceShutdownBufferRef = useRef<{
+    timeout: ReturnType<typeof setTimeout> | null;
+    bestNotification: any;
+    bestCount: number;
+    outletId: number | null;
+  }>({
+    timeout: null,
+    bestNotification: null,
+    bestCount: 0,
+    outletId: null,
+  });
 
   // Access geofence context to check zone status and trigger notifications
   const geofenceContext = useGeofenceMonitor();
+
+  // Reset geofence shutdown notification cooldown when countdown is no longer active
+  useEffect(() => {
+    if (!geofenceContext.status.countdownIsActive) {
+      lastGeofenceShutdownNotificationRef.current = {
+        timestamp: 0,
+        message: null,
+        outletCount: 0,
+      };
+    }
+  }, [geofenceContext.status.countdownIsActive]);
 
   // Fetch outlets from backend
   const refreshOutlets = useCallback(async () => {
@@ -111,10 +140,194 @@ export function OutletProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [refreshOutlets, togglingOutlets]);
 
+  // Poll for new notifications every 10 seconds
+  useEffect(() => {
+    const checkNotifications = async () => {
+      try {
+        // Check notifications for all outlets
+        type OutletNotification = Awaited<ReturnType<typeof api.getOutletNotifications>>[number];
+        const aggregatedGeofenceShutdowns: Array<{ notification: OutletNotification; outletId: number }> = [];
+
+        const extractOutletCount = (message?: string | null): number => {
+          if (!message) return 0;
+          const match = message.match(/(\d+)\s+outlet/i);
+          if (match) {
+            const parsed = Number.parseInt(match[1], 10);
+            if (Number.isFinite(parsed)) {
+              return parsed;
+            }
+          }
+
+          const listMatch = message.match(/\(([^)]+)\)/);
+          if (listMatch) {
+            const outlets = listMatch[1]
+              .split(",")
+              .map((part) => part.trim())
+              .filter(Boolean);
+            if (outlets.length > 0) {
+              return outlets.length;
+            }
+          }
+          return 0;
+        };
+
+        const enqueueGeofenceNotification = (notification: OutletNotification, sourceOutletId: number) => {
+          const message = notification.message ?? "";
+          const now = Date.now();
+          const count = extractOutletCount(message);
+
+          // Use a shorter 2-second cooldown for geofence shutdown notifications
+          // This prevents duplicates while still allowing legitimate notifications
+          const lastSent = lastGeofenceShutdownNotificationRef.current;
+          if (now - lastSent.timestamp < 2000 && count <= lastSent.outletCount) {
+            return;
+          }
+
+          const buffer = geofenceShutdownBufferRef.current;
+          if (!buffer.timeout) {
+            buffer.bestNotification = notification;
+            buffer.bestCount = count;
+            buffer.outletId = sourceOutletId;
+            buffer.timeout = setTimeout(() => {
+              const currentBuffer = geofenceShutdownBufferRef.current;
+              const best = currentBuffer.bestNotification;
+              const bestCount = currentBuffer.bestCount;
+              const bestOutletId = currentBuffer.outletId ?? sourceOutletId;
+
+              currentBuffer.timeout = null;
+              currentBuffer.bestNotification = null;
+              currentBuffer.bestCount = 0;
+              currentBuffer.outletId = null;
+
+              if (!best) {
+                return;
+              }
+
+              const bestMessage = best.message ?? "";
+              void Notifications.scheduleNotificationAsync({
+                content: {
+                  title: "📍 Geofence Auto-Shutdown",
+                  body: bestMessage,
+                  data: { outletId: bestOutletId, notificationId: best.notificationID },
+                },
+                trigger: null,
+              })
+                .then(() => {
+                  lastGeofenceShutdownNotificationRef.current = {
+                    timestamp: Date.now(),
+                    message: bestMessage,
+                    outletCount: bestCount,
+                  };
+                })
+                .catch((error) => {
+                  console.error("Failed to send geofence shutdown notification:", error);
+                });
+            }, 750);
+          } else if (count > buffer.bestCount) {
+            buffer.bestNotification = notification;
+            buffer.bestCount = count;
+            buffer.outletId = sourceOutletId;
+          }
+        };
+
+        for (const outlet of outlets) {
+          const notifications = await api.getOutletNotifications(
+            outlet.id,
+            5,
+            lastNotificationCheckRef.current
+          );
+
+          // Show push notification for each new notification
+          const geofenceShutdownNotifications: typeof notifications = [];
+          const otherNotifications: Array<{
+            notification: (typeof notifications)[number];
+            isGeofence: boolean;
+            isTimer: boolean;
+          }> = [];
+
+          for (const notification of notifications) {
+            const message = notification.message ?? "";
+            const isGeofence = message.includes("Geofence");
+            const isTimer = message.includes("Timer completed");
+            const isGeofenceShutdown =
+              isGeofence && /turned off/i.test(message) && !/auto-shutdown\s+countdown/i.test(message);
+
+            if (isGeofenceShutdown) {
+              geofenceShutdownNotifications.push(notification);
+              continue;
+            }
+
+            otherNotifications.push({ notification, isGeofence, isTimer });
+          }
+
+          for (const { notification, isGeofence, isTimer } of otherNotifications) {
+            let title = "🔔 PowerGuard";
+            if (isGeofence) {
+              title = "📍 Geofence Auto-Shutdown";
+            } else if (isTimer) {
+              title = "⏰ Timer Completed";
+            }
+
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title,
+                body: notification.message ?? "",
+                data: { outletId: outlet.id, notificationId: notification.notificationID },
+              },
+              trigger: null, // Immediate
+            });
+          }
+
+          if (geofenceShutdownNotifications.length > 0) {
+            for (const notification of geofenceShutdownNotifications) {
+              aggregatedGeofenceShutdowns.push({ notification, outletId: outlet.id });
+            }
+          }
+        }
+
+        if (aggregatedGeofenceShutdowns.length > 0) {
+          aggregatedGeofenceShutdowns.sort((a, b) => {
+            const countA = extractOutletCount(a.notification.message);
+            const countB = extractOutletCount(b.notification.message);
+            if (countA === countB) {
+              const idA = typeof a.notification.notificationID === "number" ? a.notification.notificationID : 0;
+              const idB = typeof b.notification.notificationID === "number" ? b.notification.notificationID : 0;
+              return idB - idA;
+            }
+            return countB - countA;
+          });
+
+          for (const entry of aggregatedGeofenceShutdowns) {
+            enqueueGeofenceNotification(entry.notification, entry.outletId);
+          }
+        }
+
+        // Update last check time
+        lastNotificationCheckRef.current = new Date().toISOString();
+      } catch (error) {
+        console.error('Error checking notifications:', error);
+      }
+    };
+
+    // Initial check after 5 seconds
+    const initialTimeout = setTimeout(checkNotifications, 5000);
+
+    // Then check every 10 seconds
+    const interval = setInterval(checkNotifications, 10000);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+      if (geofenceShutdownBufferRef.current.timeout) {
+        clearTimeout(geofenceShutdownBufferRef.current.timeout);
+        geofenceShutdownBufferRef.current.timeout = null;
+      }
+    };
+  }, [outlets]);
+
   const toggleOutlet = useCallback(async (id: number) => {
     // Prevent toggling if already in progress
     if (togglingOutlets.has(id)) {
-      console.log(`Outlet ${id} is already being toggled, ignoring request`);
       return;
     }
 
@@ -164,18 +377,8 @@ export function OutletProvider({ children }: { children: ReactNode }) {
 
       // Check if outlet was turned ON while outside geofence zone
       if (newState && geofenceContext.settings?.isEnabled && geofenceContext.status.zone === "OUTSIDE") {
-        // Count how many outlets are now ON
-        const currentOutlets = await api.getOutlets();
-        const activeOutletCount = currentOutlets.filter(o => o.state).length;
-
-        if (activeOutletCount > 0) {
-          // Trigger notification - user turned ON outlet(s) while outside
-          await geofenceContext.sendGeofenceAlert(
-            activeOutletCount,
-            geofenceContext.settings?.autoShutdownTime || 900,
-            'turned_on_outside'
-          );
-        }
+        // Force backend evaluation which will handle notification aggregation
+        await geofenceContext.forceGeofenceEvaluation();
       }
     } catch (error) {
       console.error('Failed to toggle outlet:', error);

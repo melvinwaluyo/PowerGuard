@@ -154,13 +154,13 @@ export class GeofenceAutomationService {
           try {
             await this.timerService.startTimer(outlet.outletID, autoShutdownSeconds, {
               source: TimerSource.GEOFENCE,
-              note: 'Timer geofence dimulai (keluar radius)',
+              note: 'Geofence timer started (left radius)',
               allowReplace: outlet.timerSource === TimerSource.GEOFENCE,
             });
             triggeredOutlets.push(outlet.outletID);
           } catch (error) {
             this.logger.warn(
-              `Gagal memulai timer geofence untuk outlet ${outlet.outletID}: ${(error as Error).message}`,
+              `Failed to start geofence timer for outlet ${outlet.outletID}: ${(error as Error).message}`,
             );
           }
         }
@@ -253,13 +253,13 @@ export class GeofenceAutomationService {
         try {
           await this.timerService.stopTimer(outlet.outletID, {
             status: TimerLogStatus.AUTO_CANCELLED,
-            note: 'Timer geofence dibatalkan (kembali ke radius aman)',
+            note: 'Geofence timer cancelled (returned to safe radius)',
             expectedSource: TimerSource.GEOFENCE,
             logWhenInactive: false,
           });
         } catch (error) {
           this.logger.warn(
-            `Gagal menghentikan timer geofence untuk outlet ${outlet.outletID}: ${(error as Error).message}`,
+            `Failed to stop geofence timer for outlet ${outlet.outletID}: ${(error as Error).message}`,
           );
         }
       }
@@ -277,7 +277,7 @@ export class GeofenceAutomationService {
       if (outlets.length) {
         await this.createNotification(
           outlets[0].outletID,
-          'Auto shutdown dibatalkan: Anda kembali ke lokasi aman.',
+          'Auto-shutdown cancelled: You returned to safe location.',
         );
       }
     } else if (previousZone !== GeofenceZone.INSIDE) {

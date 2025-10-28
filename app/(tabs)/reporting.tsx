@@ -459,7 +459,6 @@ const PowerUsageChart: React.FC = () => {
       const currentDateString = `${now.getUTCFullYear()}-${now.getUTCMonth()}-${now.getUTCDate()}`;
 
       if (lastCheckedDateRef.current && lastCheckedDateRef.current !== currentDateString) {
-        console.log('Day changed, refreshing data...');
         fetchData();
       }
 

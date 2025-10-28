@@ -12,7 +12,8 @@
     "backend": "cd backend && npm run start:dev",
     "backend:build": "cd backend && npm run build",
     "backend:prod": "cd backend && npm run start:prod",
-    "install:all": "npm install && cd backend && npm install"
+    "install:all": "npm install && cd backend && npm install",
+    "local-ip": "node -e \"const os = require('os'); const nets = os.networkInterfaces(); Object.values(nets).flat().filter(i => i.family === 'IPv4' && !i.internal).forEach(i => console.log('Local IP:', i.address));\""
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -22,11 +23,13 @@
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "@react-navigation/native-stack": "^7.3.16",
+    "dotenv": "^17.2.3",
     "expo": "~54.0.9",
     "expo-audio": "^1.0.13",
     "expo-av": "^16.0.7",
     "expo-blur": "~15.0.7",
     "expo-constants": "~18.0.9",
+    "expo-dev-client": "~6.0.16",
     "expo-font": "~14.0.8",
     "expo-haptics": "~15.0.7",
     "expo-image": "~3.0.8",
