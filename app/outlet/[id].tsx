@@ -16,6 +16,7 @@ import {
   TimerSource,
 } from "@/types/outlet";
 import { TimerDurationValue } from "@/types/timer";
+import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
 
 const LOG_CATEGORY_META: Record<
   OutletLogCategory,
@@ -117,6 +118,7 @@ export default function OutletDetailsScreen() {
 
   const { getOutletById, toggleOutlet, updateOutlet, renameOutlet, refreshOutlets, togglingOutlets } = useOutlets();
   const outlet = Number.isFinite(outletId) ? getOutletById(outletId) : undefined;
+  const { status: geofenceStatus } = useGeofenceMonitor();
 
   const [activeTab, setActiveTab] = useState<DetailTab>("status");
   const [renameModalVisible, setRenameModalVisible] = useState(false);
@@ -205,7 +207,18 @@ export default function OutletDetailsScreen() {
     return () => clearInterval(interval);
   }, [outletId, loadTimerLogs]);
 
+  const isGeofenceTimerActive =
+    Boolean(timerState?.isActive) &&
+    timerState?.source === "GEOFENCE" &&
+    geofenceStatus.countdownIsActive &&
+    Boolean(geofenceStatus.countdownEndsAt);
+
   useEffect(() => {
+    if (isGeofenceTimerActive) {
+      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
+      return;
+    }
+
     if (!timerState) {
       setCountdownSeconds(timerPresetSeconds);
       return;
@@ -238,7 +251,13 @@ export default function OutletDetailsScreen() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timerState, timerPresetSeconds, refreshTimerStatus, loadTimerLogs]);
+  }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds, timerState, timerPresetSeconds, refreshTimerStatus, loadTimerLogs]);
+
+  useEffect(() => {
+    if (isGeofenceTimerActive) {
+      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
+    }
+  }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds]);
 
   const handleTimerDurationChange = useCallback(
     async (nextSeconds: number) => {

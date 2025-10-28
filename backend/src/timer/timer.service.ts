@@ -459,35 +459,55 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
           },
         });
 
-        // Matikan semua outlet yang aktif secara bersamaan
-        for (const outlet of activeOutlets) {
-          await this.mqttService.controlOutlet(outlet.outletID, false);
+        if (activeOutlets.length === 0) {
+          await this.prisma.geofenceSetting.updateMany({
+            where: { powerstripID },
+            data: {
+              countdownIsActive: false,
+              countdownEndsAt: null,
+              countdownStartedAt: null,
+              lastAutoShutdownAt: new Date(),
+            },
+          });
+          this.logger.log(
+            `Geofence timer selesai: tidak ada outlet aktif untuk powerstrip ${powerstripID}`
+          );
+          return;
+        }
 
-          // Update status outlet di database
-          await this.prisma.outlet.update({
-            where: { outletID: outlet.outletID },
+        const outletIds = activeOutlets.map((outlet) => outlet.outletID);
+
+        await this.prisma.$transaction(async (tx) => {
+          await tx.outlet.updateMany({
+            where: {
+              outletID: {
+                in: outletIds,
+              },
+            },
             data: {
               state: false,
               timerIsActive: false,
               timerEndsAt: null,
-              timerSource: null
-            }
+              timerSource: null,
+            },
           });
-        }
+        });
+
+        await Promise.all(
+          activeOutlets.map((outlet) => this.mqttService.controlOutlet(outlet.outletID, false)),
+        );
 
         // Record ONE notification for ALL outlets (not per outlet)
         // Only record if there were outlets to turn off
-        if (activeOutlets.length > 0) {
-          const outletNames = activeOutlets
-            .map(o => o.name || `Outlet ${o.index || o.outletID}`)
-            .join(', ');
+        const outletNames = activeOutlets
+          .map((o) => o.name || `Outlet ${o.index || o.outletID}`)
+          .join(', ');
 
-          // Record notification to the first outlet (or any outlet in the powerstrip)
-          await this.recordNotification(
-            activeOutlets[0].outletID,
-            `Geofence auto-shutdown: ${activeOutlets.length} outlet(s) turned off (${outletNames})`
-          );
-        }
+        // Record notification to the first outlet (or any outlet in the powerstrip)
+        await this.recordNotification(
+          activeOutlets[0].outletID,
+          `Geofence auto-shutdown: ${activeOutlets.length} outlet(s) turned off (${outletNames})`,
+        );
 
         // Update status geofence
         await this.prisma.geofenceSetting.updateMany({

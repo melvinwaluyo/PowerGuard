@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { Outlet } from "@/types/outlet";
+import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
 import ClockIcon from "../assets/images/Clock.svg";
 import FlashIcon from "../assets/images/FlashOn.svg";
 import SocketIcon from "../assets/images/Socket.svg";
@@ -50,19 +51,35 @@ const normaliseSeconds = (primary?: number | null, fallback?: number | null): nu
   return Math.max(0, Math.floor(candidate));
 };
 
-const useTimerCountdown = (outlet: Outlet): number | null => {
+const useTimerCountdown = (outlet: Outlet, overrideSeconds?: number | null, overrideIsActive?: boolean): number | null => {
   const timer = outlet.timer;
   const isActive = Boolean(outlet.isOn && timer?.isActive);
   const baseSeconds = normaliseSeconds(timer?.remainingSeconds, timer?.durationSeconds);
-  const [seconds, setSeconds] = useState<number | null>(isActive ? baseSeconds : null);
+  const [seconds, setSeconds] = useState<number | null>(() => {
+    if (overrideIsActive) {
+      return typeof overrideSeconds === "number" ? normaliseSeconds(overrideSeconds) : null;
+    }
+    return isActive ? baseSeconds : null;
+  });
 
   useEffect(() => {
+    if (overrideIsActive) {
+      setSeconds(typeof overrideSeconds === "number" ? normaliseSeconds(overrideSeconds) : null);
+      return;
+    }
+
     if (!isActive) {
       setSeconds(null);
       return;
     }
 
-    setSeconds(normaliseSeconds(timer?.remainingSeconds, timer?.durationSeconds));
+    setSeconds(baseSeconds);
+  }, [overrideIsActive, overrideSeconds, isActive, baseSeconds]);
+
+  useEffect(() => {
+    if (overrideIsActive || !isActive) {
+      return undefined;
+    }
 
     const interval = setInterval(() => {
       setSeconds((prev) => {
@@ -74,14 +91,20 @@ const useTimerCountdown = (outlet: Outlet): number | null => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isActive, timer?.remainingSeconds, timer?.durationSeconds]);
+  }, [overrideIsActive, isActive, timer?.remainingSeconds, timer?.durationSeconds]);
 
   return seconds;
 };
 
 export function OutletCard({ outlet, onToggle, onPress, isToggling = false }: OutletCardProps) {
   const statusStyle = STATUS_STYLES[outlet.status] ?? STATUS_STYLES.default;
-  const countdownSeconds = useTimerCountdown(outlet);
+  const { status: geofenceStatus } = useGeofenceMonitor();
+  const geofenceTimerActive =
+    outlet.timer?.source === "GEOFENCE" &&
+    geofenceStatus.countdownIsActive &&
+    Boolean(geofenceStatus.countdownEndsAt);
+  const geofenceSeconds = geofenceTimerActive ? geofenceStatus.remainingSeconds : null;
+  const countdownSeconds = useTimerCountdown(outlet, geofenceSeconds, geofenceTimerActive);
   const timerText = countdownSeconds === null ? "-" : formatSecondsAsClock(countdownSeconds);
 
   return (

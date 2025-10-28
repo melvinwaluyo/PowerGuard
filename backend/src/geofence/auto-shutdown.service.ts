@@ -36,12 +36,40 @@ export class AutoShutdownService {
       throw new BadRequestException('Auto shutdown request already resolved');
     }
 
-    await this.prisma.autoShutdownRequest.update({
-      where: { requestID: requestId },
-      data: {
-        status: AutoShutdownStatus.CONFIRMED,
-        note: 'Disetujui pengguna',
+    const pendingRequests = await this.prisma.autoShutdownRequest.findMany({
+      where: {
+        powerstripID: request.powerstripID,
+        status: AutoShutdownStatus.PENDING,
       },
+      select: {
+        requestID: true,
+      },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.autoShutdownRequest.update({
+        where: { requestID: requestId },
+        data: {
+          status: AutoShutdownStatus.CONFIRMED,
+          note: 'Disetujui pengguna',
+        },
+      });
+
+      if (pendingRequests.length > 0) {
+        await tx.autoShutdownRequest.updateMany({
+          where: {
+            powerstripID: request.powerstripID,
+            status: AutoShutdownStatus.PENDING,
+            requestID: {
+              not: requestId,
+            },
+          },
+          data: {
+            status: AutoShutdownStatus.CONFIRMED,
+            note: 'Disetujui bersamaan melalui auto shutdown batch',
+          },
+        });
+      }
     });
 
     await this.timerService.fulfillGeofenceAutoShutdown(request.outletID, request.powerstripID);
