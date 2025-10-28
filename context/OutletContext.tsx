@@ -143,6 +143,23 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   // Poll for new notifications every 10 seconds
   useEffect(() => {
     const checkNotifications = async () => {
+      const lastCheckTimestamp = lastNotificationCheckRef.current;
+      const checkStartedAt = new Date().toISOString();
+      let latestNotificationTimestamp = lastCheckTimestamp;
+
+      const normalizeCreatedAt = (value: unknown): string | null => {
+        if (!value) return null;
+        const date = value instanceof Date ? value : new Date(value);
+        return Number.isNaN(date.getTime()) ? null : date.toISOString();
+      };
+
+      const updateLatestTimestamp = (candidate: string | null) => {
+        if (!candidate) return;
+        if (!latestNotificationTimestamp || candidate > latestNotificationTimestamp) {
+          latestNotificationTimestamp = candidate;
+        }
+      };
+
       try {
         // Check notifications for all outlets
         type OutletNotification = Awaited<ReturnType<typeof api.getOutletNotifications>>[number];
@@ -234,7 +251,7 @@ export function OutletProvider({ children }: { children: ReactNode }) {
           const notifications = await api.getOutletNotifications(
             outlet.id,
             5,
-            lastNotificationCheckRef.current
+            lastCheckTimestamp
           );
 
           // Show push notification for each new notification
@@ -251,6 +268,7 @@ export function OutletProvider({ children }: { children: ReactNode }) {
             const isTimer = message.includes("Timer completed");
             const isGeofenceShutdown =
               isGeofence && /turned off/i.test(message) && !/auto-shutdown\s+countdown/i.test(message);
+            updateLatestTimestamp(normalizeCreatedAt(notification.createdAt));
 
             if (isGeofenceShutdown) {
               geofenceShutdownNotifications.push(notification);
@@ -281,6 +299,7 @@ export function OutletProvider({ children }: { children: ReactNode }) {
           if (geofenceShutdownNotifications.length > 0) {
             for (const notification of geofenceShutdownNotifications) {
               aggregatedGeofenceShutdowns.push({ notification, outletId: outlet.id });
+              updateLatestTimestamp(normalizeCreatedAt(notification.createdAt));
             }
           }
         }
@@ -302,8 +321,12 @@ export function OutletProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Update last check time
-        lastNotificationCheckRef.current = new Date().toISOString();
+        // Update last check time using the latest notification timestamp we observed
+        const nextCursor =
+          latestNotificationTimestamp && latestNotificationTimestamp > checkStartedAt
+            ? latestNotificationTimestamp
+            : checkStartedAt;
+        lastNotificationCheckRef.current = nextCursor;
       } catch (error) {
         console.error('Error checking notifications:', error);
       }
