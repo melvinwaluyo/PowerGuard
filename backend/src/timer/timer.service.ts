@@ -91,26 +91,26 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!outlet.state) {
-      throw new BadRequestException('Timer hanya dapat diaktifkan saat outlet dalam keadaan ON');
+      throw new BadRequestException('Timer can only be activated when outlet is ON');
     }
 
     if (outlet.timerIsActive) {
       if (outlet.timerSource === source || options.allowReplace) {
         await this.stopTimer(outletId, {
           status: TimerLogStatus.REPLACED,
-          note: 'Timer diganti dengan durasi baru',
+          note: 'Timer replaced with new duration',
           logWhenInactive: false,
           expectedSource: outlet.timerSource ?? undefined,
         });
       } else if (options.force) {
         await this.stopTimer(outletId, {
           status: TimerLogStatus.REPLACED,
-          note: 'Timer diganti (force)',
+          note: 'Timer replaced (forced)',
           logWhenInactive: false,
         });
       } else {
         throw new BadRequestException(
-          'Timer sudah aktif dengan sumber berbeda. Batalkan terlebih dahulu sebelum memulai yang baru.',
+          'Timer already active with different source. Cancel it first before starting a new one.',
         );
       }
     }
@@ -145,7 +145,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
           status: TimerLogStatus.STARTED,
           durationSeconds,
           remainingSeconds: durationSeconds,
-          note: options.note ?? 'Timer dimulai',
+          note: options.note ?? 'Timer started',
           source,
         },
       });
@@ -285,11 +285,11 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!outlet) {
-      throw new NotFoundException(`Outlet ${outletId} tidak ditemukan`);
+      throw new NotFoundException(`Outlet ${outletId} not found`);
     }
 
     if (outlet.timerIsActive) {
-      throw new BadRequestException('Tidak dapat mengubah durasi ketika timer sedang berjalan');
+      throw new BadRequestException('Cannot change duration while timer is running');
     }
 
     const hasChanged = outlet.timerDuration !== durationSeconds;
@@ -312,7 +312,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
             status: TimerLogStatus.REPLACED,
             durationSeconds,
             remainingSeconds: durationSeconds,
-            note: 'Preset timer diperbarui',
+            note: 'Timer preset updated',
             source: null,
           },
         });
@@ -327,7 +327,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     if (!isOn) {
       await this.stopTimer(outletId, {
         status: TimerLogStatus.POWER_OFF,
-        note: 'Timer dihentikan karena outlet dimatikan',
+        note: 'Timer stopped because outlet was turned off',
         logWhenInactive: false,
       });
     }
@@ -395,7 +395,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
           status: TimerLogStatus.COMPLETED,
           durationSeconds: outlet.timerDuration ?? undefined,
           remainingSeconds: 0,
-          note: 'Timer selesai dan relay dimatikan otomatis',
+          note: 'Timer completed and relay turned off automatically',
           source: outlet.timerSource ?? null,
         },
       });
@@ -538,7 +538,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
         data: {
           outletID: outletId,
           status: TimerLogStatus.AUTO_CANCELLED,
-          note: 'Gagal mengirim perintah MQTT untuk mematikan outlet',
+          note: 'Failed to send MQTT command to turn off outlet',
         },
       });
     }

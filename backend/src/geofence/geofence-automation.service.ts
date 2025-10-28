@@ -253,7 +253,7 @@ export class GeofenceAutomationService {
         try {
           await this.timerService.stopTimer(outlet.outletID, {
             status: TimerLogStatus.AUTO_CANCELLED,
-            note: 'Timer geofence dibatalkan (kembali ke radius aman)',
+            note: 'Geofence timer cancelled (returned to safe radius)',
             expectedSource: TimerSource.GEOFENCE,
             logWhenInactive: false,
           });
@@ -277,7 +277,7 @@ export class GeofenceAutomationService {
       if (outlets.length) {
         await this.createNotification(
           outlets[0].outletID,
-          'Auto shutdown dibatalkan: Anda kembali ke lokasi aman.',
+          'Auto-shutdown cancelled: You returned to safe location.',
         );
       }
     } else if (previousZone !== GeofenceZone.INSIDE) {

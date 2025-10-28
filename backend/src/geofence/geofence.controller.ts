@@ -88,15 +88,15 @@ export class GeofenceController {
   }
 
   @Post('auto-shutdown/:requestId/confirm')
-  @ApiOperation({ summary: 'Konfirmasi auto shutdown dan matikan outlet' })
-  @ApiResponse({ status: 200, description: 'Auto shutdown dikonfirmasi' })
+  @ApiOperation({ summary: 'Confirm auto-shutdown and turn off outlets' })
+  @ApiResponse({ status: 200, description: 'Auto-shutdown confirmed' })
   confirmAutoShutdown(@Param('requestId', ParseIntPipe) requestId: number) {
     return this.autoShutdownService.confirm(requestId);
   }
 
   @Post('auto-shutdown/:requestId/cancel')
-  @ApiOperation({ summary: 'Batalkan auto shutdown, biarkan outlet tetap menyala' })
-  @ApiResponse({ status: 200, description: 'Auto shutdown dibatalkan' })
+  @ApiOperation({ summary: 'Cancel auto-shutdown, keep outlets on' })
+  @ApiResponse({ status: 200, description: 'Auto-shutdown cancelled' })
   cancelAutoShutdown(@Param('requestId', ParseIntPipe) requestId: number) {
     return this.autoShutdownService.cancel(requestId);
   }

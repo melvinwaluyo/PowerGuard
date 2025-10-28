@@ -326,7 +326,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       stopWatching();
       Alert.alert(
         "Geofence",
-        "Izin lokasi tidak diberikan. Auto shutdown geofence tidak dapat aktif.",
+        "Location permission not granted. Geofence auto-shutdown cannot be activated.",
       );
       return;
     }
@@ -448,10 +448,10 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       shownRequestRef.current = null;
       await refreshSettings();
       await resolvePendingRequest();
-      Alert.alert("Geofence", "Outlet dimatikan sesuai permintaan.");
+      Alert.alert("Geofence", "Outlets turned off as requested.");
     } catch (error) {
       console.error('Failed to confirm auto shutdown:', error);
-      Alert.alert("Geofence", "Gagal memproses permintaan auto shutdown.");
+      Alert.alert("Geofence", "Failed to process auto-shutdown request.");
       shownRequestRef.current = null;
       setPendingRequest((prev) => (prev ? { ...prev } : prev));
     } finally {
@@ -470,10 +470,10 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       shownRequestRef.current = null;
       await refreshSettings();
       await resolvePendingRequest();
-      Alert.alert("Geofence", "Auto shutdown dibatalkan. Outlet tetap menyala.");
+      Alert.alert("Geofence", "Auto-shutdown cancelled. Outlets remain on.");
     } catch (error) {
       console.error('Failed to cancel auto shutdown:', error);
-      Alert.alert("Geofence", "Gagal membatalkan auto shutdown.");
+      Alert.alert("Geofence", "Failed to cancel auto-shutdown.");
       shownRequestRef.current = null;
       setPendingRequest((prev) => (prev ? { ...prev } : prev));
     } finally {
@@ -522,17 +522,17 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
 
     Alert.alert(
       "Auto Shutdown",
-      "Timer geofence selesai. Matikan outlet sekarang?",
+      "Geofence timer completed. Turn off outlets now?",
       [
         {
-          text: "Biarkan Menyala",
+          text: "Keep On",
           style: "cancel",
           onPress: () => {
             void cancelPendingRequest();
           },
         },
         {
-          text: "Matikan Outlet",
+          text: "Turn Off",
           onPress: () => {
             void confirmPendingRequest();
           },

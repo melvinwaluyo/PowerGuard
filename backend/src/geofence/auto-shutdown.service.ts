@@ -94,14 +94,14 @@ export class AutoShutdownService {
       where: { requestID: requestId },
       data: {
         status: AutoShutdownStatus.CANCELLED,
-        note: 'Dibatalkan pengguna',
+        note: 'Cancelled by user',
       },
     });
 
     await this.prisma.notificationLog.create({
       data: {
         outletID: request.outletID,
-        message: 'Auto shutdown geofence dibatalkan. Outlet tetap menyala.',
+        message: 'Geofence auto-shutdown cancelled. Outlets remain on.',
       },
     });
 

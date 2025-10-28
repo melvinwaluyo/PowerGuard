@@ -54,28 +54,28 @@ const formatSecondsAsClock = (seconds: number): string => {
 
 const TIMER_STATUS_COPY: Record<TimerLogStatus, { action: string; detail: (log: any) => string }> = {
   STARTED: {
-    action: "Timer dimulai",
-    detail: (log) => `Durasi ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
+    action: "Timer started",
+    detail: (log) => `Duration ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
   },
   STOPPED: {
-    action: "Timer dihentikan",
-    detail: (log) => `Sisa ${formatSecondsAsClock(log.remainingSeconds ?? 0)}`,
+    action: "Timer stopped",
+    detail: (log) => `Remaining ${formatSecondsAsClock(log.remainingSeconds ?? 0)}`,
   },
   COMPLETED: {
-    action: "Timer selesai",
-    detail: () => "Relay dimatikan otomatis",
+    action: "Timer completed",
+    detail: () => "Relay turned off automatically",
   },
   AUTO_CANCELLED: {
-    action: "Timer dibatalkan otomatis",
-    detail: () => "Terjadi kendala saat mematikan relay",
+    action: "Timer auto-cancelled",
+    detail: () => "Issue occurred while turning off relay",
   },
   POWER_OFF: {
-    action: "Power dimatikan",
-    detail: () => "Timer dihentikan karena outlet dimatikan",
+    action: "Power turned off",
+    detail: () => "Timer stopped because outlet was turned off",
   },
   REPLACED: {
-    action: "Timer diganti",
-    detail: (log) => `Durasi baru ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
+    action: "Timer replaced",
+    detail: (log) => `New duration ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
   },
 };
 
@@ -336,7 +336,7 @@ export default function OutletDetailsScreen() {
       await refreshOutlets();
     } catch (error) {
       console.error("Failed to start timer:", error);
-      Alert.alert("Timer", "Gagal memulai timer. Silakan coba lagi.");
+      Alert.alert("Timer", "Failed to start timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
@@ -353,7 +353,7 @@ export default function OutletDetailsScreen() {
       await refreshOutlets();
     } catch (error) {
       console.error("Failed to stop timer:", error);
-      Alert.alert("Timer", "Gagal menghentikan timer. Silakan coba lagi.");
+      Alert.alert("Timer", "Failed to stop timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
@@ -606,7 +606,7 @@ function StatusSection({
       await onTimerDurationChange(seconds);
       setModalVisible(false);
     } catch (error) {
-      Alert.alert("Timer", "Gagal memperbarui durasi timer. Silakan coba lagi.");
+      Alert.alert("Timer", "Failed to update timer duration. Please try again.");
     } finally {
       setSavingPreset(false);
     }
