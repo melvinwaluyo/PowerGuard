@@ -12,7 +12,8 @@
     "backend": "cd backend && npm run start:dev",
     "backend:build": "cd backend && npm run build",
     "backend:prod": "cd backend && npm run start:prod",
-    "install:all": "npm install && cd backend && npm install"
+    "install:all": "npm install && cd backend && npm install",
+    "local-ip": "node -e \"const os = require('os'); const nets = os.networkInterfaces(); Object.values(nets).flat().filter(i => i.family === 'IPv4' && !i.internal).forEach(i => console.log('Local IP:', i.address));\""
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
