@@ -40,12 +40,11 @@ Message format:
    cp .env.example .env
    ```
 
-2. Edit `.env` and configure your MQTT broker settings:
+2. Edit `.env` and configure your settings:
    ```
-   MQTT_SERVER=localhost
+   API_URL=http://localhost:3000
+   MQTT_SERVER=broker.emqx.io
    MQTT_PORT=1883
-   MQTT_USERNAME=your_username
-   MQTT_PASSWORD=your_password
    OUTLET_IDS=1,2,3,4
    PUBLISH_INTERVAL=5000
    ```
@@ -71,32 +70,45 @@ npm run dev
 
 ### Environment Variables
 
-- `MQTT_SERVER` - MQTT broker hostname (default: localhost)
+- `API_URL` - Backend API URL to fetch initial outlet states (default: http://localhost:3000)
+- `MQTT_SERVER` - MQTT broker hostname (default: broker.emqx.io)
 - `MQTT_PORT` - MQTT broker port (default: 1883)
-- `MQTT_USERNAME` - MQTT username (optional)
-- `MQTT_PASSWORD` - MQTT password (optional)
+- `MQTT_USERNAME` - MQTT username (optional, for authenticated brokers)
+- `MQTT_PASSWORD` - MQTT password (optional, for authenticated brokers)
 - `OUTLET_IDS` - Comma-separated list of outlet IDs to simulate (default: 1,2,3,4)
 - `PUBLISH_INTERVAL` - How often to publish data in milliseconds (default: 5000)
 
 ## How It Works
 
+This simulator mimics **real STM32 hardware behavior** as closely as possible:
+
 1. **Connection**: Connects to the MQTT broker using the provided credentials
-2. **Subscription**: Subscribes to `powerguard/+/control` to listen for outlet control commands
-3. **Data Generation**: Generates realistic power data for each outlet that is ON:
-   - Base load: 100-150W with sinusoidal variation
-   - Voltage: ~220V with small variations
-   - Current: Calculated from P = V × I
-   - Energy: Accumulated over time (in kWh)
-4. **Publishing**: Publishes data to `powerguard/{outletId}/data` at the configured interval
+2. **State Initialization**: Fetches current outlet states from backend API to sync with actual database state
+   - If backend is unreachable, all outlets default to OFF (safe default)
+3. **Subscription**: Subscribes to `powerguard/+/control` to listen for outlet control commands
+4. **Data Generation**:
+   - **Outlet ON**: Generates realistic power data (100-150W with sinusoidal variation, ~220V, calculated current)
+   - **Outlet OFF**: Sends **0W, 0A** (simulates real sensor reading when relay is OFF)
+   - Energy: Accumulated only when outlet is ON (stops when OFF)
+5. **Publishing**: **Always publishes** data to `powerguard/{outletId}/data` every 5 seconds
+   - This matches real STM32 behavior where sensors always report (even if 0)
+   - Allows backend to detect device online/offline vs outlet just OFF
+   - **Note**: Backend automatically skips storing 0 values (prevents database flooding)
 
 ## Testing
 
 Once the simulator is running:
 
-1. It will immediately start publishing data for all configured outlets
-2. Use your backend API to send control commands (turn outlets ON/OFF)
-3. The simulator will respond to control commands and adjust its behavior
-4. Check the console output to see published data and received commands
+1. It will fetch the current state of all outlets from the backend
+2. It will **always publish data** for all outlets:
+   - Outlets ON: Real power values (e.g., 125.50W, 0.570A)
+   - Outlets OFF: Zero values (0.00W, 0.000A) - **this is normal!**
+3. Use your mobile app or backend API to turn outlets ON/OFF
+4. The simulator will respond to control commands immediately
+5. Check the console output to see:
+   - Initial outlet states (🟢 ON / 🔴 OFF)
+   - Published data for ALL outlets (0W when OFF, real values when ON)
+   - Received control commands (🔧 Outlet X turned ON/OFF)
 
 ## Switching to Real Hardware
 
@@ -123,6 +135,20 @@ When your STM32 device is ready:
 ### High CPU Usage
 - Increase PUBLISH_INTERVAL to reduce publishing frequency
 - Reduce the number of simulated outlets
+
+### Seeing 0W for All Outlets
+- **This is normal if outlets are OFF!** Real STM32 sensors read 0 when relay is OFF
+- The simulator still publishes these 0 values (mimics real hardware)
+- Backend logs will show "Skipped storing 0 values" - **this is intentional** to prevent database flooding
+- Check outlet states in your mobile app - they should show OFF (red)
+- Turn outlets ON via app to see real power values
+- If outlets are ON but still showing 0W, check backend MQTT connection
+
+### Outlets Don't Match App State
+- Verify `API_URL` points to your backend (use Azure URL if backend is deployed)
+- Ensure backend is running and accessible
+- Restart simulator to re-fetch outlet states from backend
+- If backend is unreachable, simulator defaults all outlets to OFF for safety
 
 ## License
 

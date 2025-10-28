@@ -61,6 +61,11 @@ powerguard/{outletId}/{action}
 
 **Publishing Frequency**: Every 5 seconds (recommended)
 
+**Important Note**: The STM32 should **always publish** data (even when outlet is OFF), but the backend **will not store** 0 values in the database to prevent flooding. This design allows:
+- Device online/offline monitoring (backend knows if STM32 is connected)
+- Efficient database usage (only stores meaningful power consumption data)
+- Accurate energy tracking (energy only accumulates when power > 0)
+
 **Example C Code**:
 ```c
 void publishPowerData(int outletId, float current, float power, float energy) {
@@ -149,9 +154,10 @@ void onMessageReceived(char* topic, char* payload) {
 ### Publish Power Data
 - [ ] Measure current, power, and energy for each outlet
 - [ ] Calculate cumulative energy (kWh) for each outlet
-- [ ] Publish to `powerguard/{outletId}/data` every 5 seconds
+- [ ] **Always publish** to `powerguard/{outletId}/data` every 5 seconds (even if outlet is OFF)
 - [ ] Format message as JSON: `{"current": X.XXX, "power": XX.XX, "energy": X.XXXX}`
-- [ ] Only publish data for outlets that are ON (optional optimization)
+- [ ] When outlet is OFF, send `{"current": 0.000, "power": 0.00, "energy": X.XXXX}`
+- [ ] Backend will automatically skip storing 0 values (prevents database flooding)
 
 ### Error Handling
 - [ ] Handle MQTT connection loss and reconnect automatically

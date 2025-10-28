@@ -69,7 +69,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       if (parts[0] === 'powerguard' && parts[2] === 'data') {
         const outletId = parseInt(parts[1]);
 
-        // Store usage data in database
+        // Skip storing if all values are 0 or null (outlet is OFF)
+        // This prevents database flooding with useless zero entries
+        const power = data.power || 0;
+        const current = data.current || 0;
+
+        if (power === 0 && current === 0) {
+          console.log(`Skipped storing 0 values for outlet ${outletId} (outlet is OFF)`);
+          return;
+        }
+
+        // Store usage data in database (only meaningful data)
         await this.prisma.usageLog.create({
           data: {
             outletID: outletId,
@@ -79,7 +89,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           },
         });
 
-        console.log(`Stored usage data for outlet ${outletId}`);
+        console.log(`Stored usage data for outlet ${outletId}: ${power}W, ${current}A`);
       }
     } catch (error) {
       console.error('Error processing MQTT message:', error);

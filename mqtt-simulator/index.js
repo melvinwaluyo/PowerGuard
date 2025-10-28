@@ -34,10 +34,10 @@ class MqttSimulator {
       password,
     });
 
-    this.client.on('connect', () => {
+    this.client.on('connect', async () => {
       console.log('✅ Connected to MQTT broker');
       this.subscribeToControlTopics();
-      this.initializeOutlets();
+      await this.initializeOutlets();
       this.startSimulation();
     });
 
@@ -51,24 +51,57 @@ class MqttSimulator {
   }
 
   /**
-   * Initialize outlets configuration
+   * Initialize outlets configuration by fetching current state from backend
    * You can modify this to match your outlet IDs
    */
-  initializeOutlets() {
+  async initializeOutlets() {
     // Parse outlet IDs from environment variable (comma-separated)
     // Example: OUTLET_IDS=1,2,3,4
     const outletIds = process.env.OUTLET_IDS || '1,2,3,4';
-    this.outlets = outletIds.split(',').map(id => ({
-      id: parseInt(id.trim()),
-      state: true, // Initially ON
-    }));
+    const apiUrl = process.env.API_URL || 'http://localhost:3000';
+
+    console.log(`🔍 Fetching outlet states from ${apiUrl}/outlets...`);
+
+    try {
+      // Fetch current outlet states from backend
+      const response = await fetch(`${apiUrl}/outlets`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const outletsData = await response.json();
+      const outletIdsArray = outletIds.split(',').map(id => parseInt(id.trim()));
+
+      // Initialize outlets with actual state from backend
+      this.outlets = outletIdsArray.map(id => {
+        const backendOutlet = outletsData.find(o => o.outletID === id);
+        return {
+          id: id,
+          state: backendOutlet ? backendOutlet.state : false, // Use actual state or default to OFF
+        };
+      });
+
+      console.log(`✅ Fetched ${this.outlets.length} outlet states from backend`);
+    } catch (error) {
+      console.warn(`⚠️  Could not fetch outlet states from backend: ${error.message}`);
+      console.log(`📍 Initializing outlets as OFF by default...`);
+
+      // Fallback: Initialize all outlets as OFF if backend is unreachable
+      this.outlets = outletIds.split(',').map(id => ({
+        id: parseInt(id.trim()),
+        state: false, // Default to OFF
+      }));
+    }
 
     // Initialize energy tracking
     this.outlets.forEach(outlet => {
       this.lastEnergy.set(outlet.id, 0);
     });
 
-    console.log(`📍 Initialized ${this.outlets.length} outlets:`, this.outlets.map(o => o.id).join(', '));
+    // Show outlet states
+    this.outlets.forEach(outlet => {
+      console.log(`  Outlet ${outlet.id}: ${outlet.state ? '🟢 ON' : '🔴 OFF'}`);
+    });
   }
 
   /**
@@ -125,31 +158,36 @@ class MqttSimulator {
 
   /**
    * Generate and publish mock power data via MQTT (simulating STM32)
+   * Real STM32 behavior: Always publish, but send 0 values when outlet is OFF
    */
   publishMockData() {
     const timestamp = new Date().toLocaleTimeString();
 
     this.outlets.forEach(outlet => {
-      // Only publish data for outlets that are ON
-      if (!outlet.state) {
-        return;
+      let current, power, totalEnergy;
+
+      if (outlet.state) {
+        // Outlet is ON - Generate realistic power data
+        const baseLoad = 100 + Math.random() * 50; // 100-150W base load
+        const variation = Math.sin(Date.now() / 10000) * 20; // Sinusoidal variation
+
+        power = Math.max(0, baseLoad + variation); // Watts
+        const voltage = 220 + (Math.random() - 0.5) * 5; // 220V ± 2.5V
+        current = power / voltage; // Amps (P = V × I)
+
+        // Calculate energy (kWh) - approximate incremental energy
+        const interval = parseInt(process.env.PUBLISH_INTERVAL || '5000');
+        const energyIncrement = (power / 1000) * (interval / 3600000); // Convert ms to hours
+        totalEnergy = this.lastEnergy.get(outlet.id) + energyIncrement;
+
+        // Update tracked energy
+        this.lastEnergy.set(outlet.id, totalEnergy);
+      } else {
+        // Outlet is OFF - Sensor reads 0 (this is real STM32 behavior!)
+        current = 0;
+        power = 0;
+        totalEnergy = this.lastEnergy.get(outlet.id); // Energy doesn't increase when OFF
       }
-
-      // Generate realistic power data
-      const baseLoad = 100 + Math.random() * 50; // 100-150W base load
-      const variation = Math.sin(Date.now() / 10000) * 20; // Sinusoidal variation
-
-      const power = Math.max(0, baseLoad + variation); // Watts
-      const voltage = 220 + (Math.random() - 0.5) * 5; // 220V ± 2.5V
-      const current = power / voltage; // Amps (P = V × I)
-
-      // Calculate energy (kWh) - approximate incremental energy
-      const interval = parseInt(process.env.PUBLISH_INTERVAL || '5000');
-      const energyIncrement = (power / 1000) * (interval / 3600000); // Convert ms to hours
-      const totalEnergy = this.lastEnergy.get(outlet.id) + energyIncrement;
-
-      // Update tracked energy
-      this.lastEnergy.set(outlet.id, totalEnergy);
 
       // Publish to MQTT topic (same as STM32 will use)
       const topic = `powerguard/${outlet.id}/data`;
