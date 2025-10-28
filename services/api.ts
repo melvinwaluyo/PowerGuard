@@ -1,15 +1,7 @@
 // PowerGuard API Service
 // API URL from environment variables
 // Set EXPO_PUBLIC_API_URL in .env file for local development
-//
-// Development Options:
-// - Web browser: http://localhost:3000
-// - Android emulator: http://10.0.2.2:3000 (special IP for host machine)
-// - iOS simulator: http://localhost:3000
-// - Physical device: http://YOUR_LOCAL_IP:3000 (find IP with: npm run local-ip)
-// - Production: https://powerguard-backend.gentlesand-6270aa0b.southeastasia.azurecontainerapps.io
-//
-// Note: For EAS builds, this is set via EAS Secrets
+
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000';
 
 export interface GeofenceSetting {
