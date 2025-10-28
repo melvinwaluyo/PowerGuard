@@ -154,13 +154,13 @@ export class GeofenceAutomationService {
           try {
             await this.timerService.startTimer(outlet.outletID, autoShutdownSeconds, {
               source: TimerSource.GEOFENCE,
-              note: 'Timer geofence dimulai (keluar radius)',
+              note: 'Geofence timer started (left radius)',
               allowReplace: outlet.timerSource === TimerSource.GEOFENCE,
             });
             triggeredOutlets.push(outlet.outletID);
           } catch (error) {
             this.logger.warn(
-              `Gagal memulai timer geofence untuk outlet ${outlet.outletID}: ${(error as Error).message}`,
+              `Failed to start geofence timer for outlet ${outlet.outletID}: ${(error as Error).message}`,
             );
           }
         }
@@ -259,7 +259,7 @@ export class GeofenceAutomationService {
           });
         } catch (error) {
           this.logger.warn(
-            `Gagal menghentikan timer geofence untuk outlet ${outlet.outletID}: ${(error as Error).message}`,
+            `Failed to stop geofence timer for outlet ${outlet.outletID}: ${(error as Error).message}`,
           );
         }
       }

@@ -322,7 +322,7 @@ export default function OutletDetailsScreen() {
   const handleStartTimer = useCallback(async () => {
     if (!outlet || !Number.isFinite(outletId)) return;
     if (!outlet.isOn) {
-      Alert.alert("Timer", "Nyalakan outlet terlebih dahulu sebelum memulai timer.");
+      Alert.alert("Timer", "Turn on outlet first before starting timer.");
       return;
     }
 
@@ -413,14 +413,14 @@ export default function OutletDetailsScreen() {
 
   const isTimerEnabled = outlet.isOn;
   const timerStatusText = !isTimerEnabled
-    ? "Nyalakan outlet untuk menggunakan timer"
+    ? "Turn on outlet to use timer"
     : timerState?.isActive
       ? timerState.source === "GEOFENCE"
-        ? "Timer geofence berjalan"
-        : "Timer berjalan"
+        ? "Geofence timer running"
+        : "Timer running"
       : timerState?.source === "GEOFENCE"
-        ? "Timer geofence siap"
-        : `Durasi ${formatSecondsAsClock(timerPresetSeconds)}`;
+        ? "Geofence timer ready"
+        : `Duration ${formatSecondsAsClock(timerPresetSeconds)}`;
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "status", label: "Status" },

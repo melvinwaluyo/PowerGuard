@@ -80,9 +80,9 @@ export class GeofenceController {
   }
 
   @Get('powerstrip/:id/auto-shutdown/pending')
-  @ApiOperation({ summary: 'Daftar permintaan auto shutdown yang belum diproses' })
+  @ApiOperation({ summary: 'List of unprocessed auto-shutdown requests' })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
-  @ApiResponse({ status: 200, description: 'Daftar permintaan pending' })
+  @ApiResponse({ status: 200, description: 'List of pending requests' })
   pendingRequests(@Param('id', ParseIntPipe) id: number) {
     return this.autoShutdownService.getPendingRequests(id);
   }

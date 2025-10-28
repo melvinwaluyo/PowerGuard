@@ -3,7 +3,7 @@ import { IsInt, Min } from 'class-validator';
 
 export class UpdateTimerPresetDto {
   @ApiProperty({
-    description: 'Durasi default timer dalam detik',
+    description: 'Default timer duration in seconds',
     minimum: 1,
     example: 900,
   })

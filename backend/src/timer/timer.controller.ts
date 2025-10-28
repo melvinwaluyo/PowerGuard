@@ -19,18 +19,18 @@ export class TimerController {
   constructor(private readonly timerService: TimerService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Status timer untuk outlet tertentu' })
-  @ApiParam({ name: 'outletId', type: 'number', description: 'ID outlet' })
-  @ApiResponse({ status: 200, description: 'Status timer terkini' })
+  @ApiOperation({ summary: 'Get timer status for specific outlet' })
+  @ApiParam({ name: 'outletId', type: 'number', description: 'Outlet ID' })
+  @ApiResponse({ status: 200, description: 'Current timer status' })
   getStatus(@Param('outletId', ParseIntPipe) outletId: number) {
     return this.timerService.getTimerStatus(outletId);
   }
 
   @Post('start')
-  @ApiOperation({ summary: 'Mulai timer untuk outlet' })
-  @ApiParam({ name: 'outletId', type: 'number', description: 'ID outlet' })
+  @ApiOperation({ summary: 'Start timer for outlet' })
+  @ApiParam({ name: 'outletId', type: 'number', description: 'Outlet ID' })
   @ApiBody({ type: StartTimerDto })
-  @ApiResponse({ status: 201, description: 'Timer dimulai' })
+  @ApiResponse({ status: 201, description: 'Timer started' })
   startTimer(
     @Param('outletId', ParseIntPipe) outletId: number,
     @Body() dto: StartTimerDto,
@@ -39,21 +39,21 @@ export class TimerController {
   }
 
   @Post('stop')
-  @ApiOperation({ summary: 'Hentikan timer aktif' })
-  @ApiParam({ name: 'outletId', type: 'number', description: 'ID outlet' })
-  @ApiResponse({ status: 200, description: 'Timer dihentikan' })
+  @ApiOperation({ summary: 'Stop active timer' })
+  @ApiParam({ name: 'outletId', type: 'number', description: 'Outlet ID' })
+  @ApiResponse({ status: 200, description: 'Timer stopped' })
   stopTimer(@Param('outletId', ParseIntPipe) outletId: number) {
     return this.timerService.stopTimer(outletId, {
       status: TimerLogStatus.STOPPED,
-      note: 'Timer dihentikan manual',
+      note: 'Timer stopped manually',
     });
   }
 
   @Post('preset')
-  @ApiOperation({ summary: 'Perbarui durasi default timer tanpa menjalankannya' })
-  @ApiParam({ name: 'outletId', type: 'number', description: 'ID outlet' })
+  @ApiOperation({ summary: 'Update default timer duration without running it' })
+  @ApiParam({ name: 'outletId', type: 'number', description: 'Outlet ID' })
   @ApiBody({ type: UpdateTimerPresetDto })
-  @ApiResponse({ status: 200, description: 'Preset timer diperbarui' })
+  @ApiResponse({ status: 200, description: 'Timer preset updated' })
   updatePreset(
     @Param('outletId', ParseIntPipe) outletId: number,
     @Body() dto: UpdateTimerPresetDto,
@@ -62,10 +62,10 @@ export class TimerController {
   }
 
   @Get('logs')
-  @ApiOperation({ summary: 'Riwayat log timer untuk outlet' })
-  @ApiParam({ name: 'outletId', type: 'number', description: 'ID outlet' })
-  @ApiQuery({ name: 'limit', type: 'number', required: false, description: 'Jumlah log (default 20)' })
-  @ApiResponse({ status: 200, description: 'Mengembalikan log timer' })
+  @ApiOperation({ summary: 'Get timer log history for outlet' })
+  @ApiParam({ name: 'outletId', type: 'number', description: 'Outlet ID' })
+  @ApiQuery({ name: 'limit', type: 'number', required: false, description: 'Number of logs (default 20)' })
+  @ApiResponse({ status: 200, description: 'Returns timer logs' })
   getLogs(
     @Param('outletId', ParseIntPipe) outletId: number,
     @Query('limit') limit?: number,
