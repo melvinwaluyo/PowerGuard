@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { Outlet } from "@/types/outlet";
 import ClockIcon from "../assets/images/Clock.svg";
@@ -34,8 +35,54 @@ const CARD_SHADOW = {
   elevation: 3,
 };
 
+const formatSecondsAsClock = (seconds: number): string => {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const secs = safeSeconds % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+};
+
+const normaliseSeconds = (primary?: number | null, fallback?: number | null): number => {
+  const candidate =
+    typeof primary === "number" && Number.isFinite(primary) ? primary : typeof fallback === "number" ? fallback : 0;
+  return Math.max(0, Math.floor(candidate));
+};
+
+const useTimerCountdown = (outlet: Outlet): number | null => {
+  const timer = outlet.timer;
+  const isActive = Boolean(outlet.isOn && timer?.isActive);
+  const baseSeconds = normaliseSeconds(timer?.remainingSeconds, timer?.durationSeconds);
+  const [seconds, setSeconds] = useState<number | null>(isActive ? baseSeconds : null);
+
+  useEffect(() => {
+    if (!isActive) {
+      setSeconds(null);
+      return;
+    }
+
+    setSeconds(normaliseSeconds(timer?.remainingSeconds, timer?.durationSeconds));
+
+    const interval = setInterval(() => {
+      setSeconds((prev) => {
+        if (prev === null) {
+          return prev;
+        }
+        return prev > 0 ? prev - 1 : 0;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isActive, timer?.remainingSeconds, timer?.durationSeconds]);
+
+  return seconds;
+};
+
 export function OutletCard({ outlet, onToggle, onPress, isToggling = false }: OutletCardProps) {
   const statusStyle = STATUS_STYLES[outlet.status] ?? STATUS_STYLES.default;
+  const countdownSeconds = useTimerCountdown(outlet);
+  const timerText = countdownSeconds === null ? "-" : formatSecondsAsClock(countdownSeconds);
 
   return (
     <View
@@ -75,15 +122,16 @@ export function OutletCard({ outlet, onToggle, onPress, isToggling = false }: Ou
                 </Text>
               </View>
 
-              <View className="flex-row items-center">
+              <View className="flex-row items-start">
                 <ClockIcon width={13} height={13} color="#6B7280" />
-                <Text className="ml-1.5 text-[12px] font-medium text-[#6B7280]">
-                  {outlet.duration ?? "-"}
-                </Text>
+                <View className="ml-1.5 flex-1">
+                  <Text className="text-[12px] font-semibold text-[#6B7280]">
+                    {timerText}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
-
           {/* Right side - Toggle */}
           <TouchableOpacity
             activeOpacity={0.7}
