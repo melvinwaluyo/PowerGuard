@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import { Outlet, TimerSource } from "@/types/outlet";
 import { api } from "@/services/api";
 import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
+import * as Notifications from "expo-notifications";
 
 interface OutletContextValue {
   outlets: Outlet[];
@@ -76,6 +77,7 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [togglingOutlets, setTogglingOutlets] = useState<Set<number>>(new Set());
+  const lastNotificationCheckRef = useRef<string>(new Date().toISOString());
 
   // Access geofence context to check zone status and trigger notifications
   const geofenceContext = useGeofenceMonitor();
@@ -110,6 +112,61 @@ export function OutletProvider({ children }: { children: ReactNode }) {
 
     return () => clearInterval(interval);
   }, [refreshOutlets, togglingOutlets]);
+
+  // Poll for new notifications every 10 seconds
+  useEffect(() => {
+    const checkNotifications = async () => {
+      try {
+        // Check notifications for all outlets
+        for (const outlet of outlets) {
+          const notifications = await api.getOutletNotifications(
+            outlet.id,
+            5,
+            lastNotificationCheckRef.current
+          );
+
+          // Show push notification for each new notification
+          for (const notification of notifications) {
+            // Determine notification type based on message content
+            const isGeofence = notification.message.includes('Geofence');
+            const isTimer = notification.message.includes('Timer completed');
+
+            let title = '🔔 PowerGuard';
+            if (isGeofence) {
+              title = '📍 Geofence Auto-Shutdown';
+            } else if (isTimer) {
+              title = '⏰ Timer Completed';
+            }
+
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title,
+                body: notification.message,
+                data: { outletId: outlet.id, notificationId: notification.notificationID },
+              },
+              trigger: null, // Immediate
+            });
+          }
+        }
+
+        // Update last check time
+        lastNotificationCheckRef.current = new Date().toISOString();
+      } catch (error) {
+        console.error('Error checking notifications:', error);
+      }
+    };
+
+    // Initial check after 5 seconds
+    const initialTimeout = setTimeout(checkNotifications, 5000);
+
+    // Then check every 10 seconds
+    const interval = setInterval(checkNotifications, 10000);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
+  }, [outlets]);
 
   const toggleOutlet = useCallback(async (id: number) => {
     // Prevent toggling if already in progress

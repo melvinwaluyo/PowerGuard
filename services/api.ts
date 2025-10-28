@@ -443,6 +443,24 @@ class ApiService {
     }
   }
 
+  // Notifications
+  async getOutletNotifications(outletId: number, limit: number = 10, since?: string) {
+    try {
+      const params = new URLSearchParams();
+      params.append('limit', limit.toString());
+      if (since) params.append('since', since);
+
+      const response = await fetch(`${this.baseUrl}/outlets/${outletId}/notifications?${params}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      throw error;
+    }
+  }
+
   // Development/Testing Utilities
   async clearAllUsageData() {
     try {

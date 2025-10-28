@@ -199,6 +199,23 @@ export class OutletsService {
     return result[0]?.total_energy_kwh || 0;
   }
 
+  async getNotifications(outletId: number, limit: number = 10, since?: string) {
+    const whereClause: any = { outletID: outletId };
+
+    if (since) {
+      const sinceDate = new Date(since);
+      if (!isNaN(sinceDate.getTime())) {
+        whereClause.createdAt = { gt: sinceDate };
+      }
+    }
+
+    return this.prisma.notificationLog.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  }
+
   /**
    * Clear all usage log data (for development/testing)
    * WARNING: This will delete ALL usage data from the database

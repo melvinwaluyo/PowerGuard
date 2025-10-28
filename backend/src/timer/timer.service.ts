@@ -417,10 +417,29 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
       `Timer selesai untuk outlet ${outletId}, mematikan relay (source: ${outlet.timerSource ?? 'unknown'})`,
     );
     await this.safeTurnOffOutlet(outletId, outlet.timerSource ?? null, outlet.powerstripID ?? null);
+
+    // Record notification ONLY for manual timers (not geofence)
+    // Geofence notifications are handled in safeTurnOffOutlet
+    if (outlet.timerSource !== TimerSource.GEOFENCE) {
+      const outletName = await this.getOutletName(outletId);
+      const durationMinutes = Math.round((outlet.timerDuration ?? 0) / 60);
+      await this.recordNotification(
+        outletId,
+        `Timer completed: ${outletName} turned off after ${durationMinutes} minute(s)`,
+      );
+    }
+  }
+
+  private async getOutletName(outletId: number): Promise<string> {
+    const outlet = await this.prisma.outlet.findUnique({
+      where: { outletID: outletId },
+      select: { name: true, index: true },
+    });
+    return outlet?.name || `Outlet ${outlet?.index || outletId}`;
   }
 
   private async safeTurnOffOutlet(
-    outletId: number, 
+    outletId: number,
     source: TimerSource | null,
     powerstripID: number | null
   ) {
@@ -435,28 +454,38 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
           },
           select: {
             outletID: true,
+            name: true,
+            index: true,
           },
         });
 
         // Matikan semua outlet yang aktif secara bersamaan
         for (const outlet of activeOutlets) {
           await this.mqttService.controlOutlet(outlet.outletID, false);
-          
+
           // Update status outlet di database
           await this.prisma.outlet.update({
             where: { outletID: outlet.outletID },
-            data: { 
+            data: {
               state: false,
               timerIsActive: false,
               timerEndsAt: null,
               timerSource: null
             }
           });
+        }
 
-          // Catat notifikasi untuk setiap outlet
+        // Record ONE notification for ALL outlets (not per outlet)
+        // Only record if there were outlets to turn off
+        if (activeOutlets.length > 0) {
+          const outletNames = activeOutlets
+            .map(o => o.name || `Outlet ${o.index || o.outletID}`)
+            .join(', ');
+
+          // Record notification to the first outlet (or any outlet in the powerstrip)
           await this.recordNotification(
-            outlet.outletID,
-            'Auto shutdown: Outlet dimatikan karena timer geofence selesai.'
+            activeOutlets[0].outletID,
+            `Geofence auto-shutdown: ${activeOutlets.length} outlet(s) turned off (${outletNames})`
           );
         }
 
