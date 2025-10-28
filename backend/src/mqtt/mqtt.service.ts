@@ -69,23 +69,25 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       if (parts[0] === 'powerguard' && parts[2] === 'data') {
         const outletId = parseInt(parts[1]);
 
-        // Skip storing if all values are 0 or null (outlet is OFF)
-        // This prevents database flooding with useless zero entries
-        const power = data.power || 0;
-        const current = data.current || 0;
+        // Extract values with proper null handling
+        const current = typeof data.current === 'number' ? data.current : null;
+        const power = typeof data.power === 'number' ? data.power : null;
+        const energy = typeof data.energy === 'number' ? data.energy : null;
 
-        if (power === 0 && current === 0) {
-          console.log(`Skipped storing 0 values for outlet ${outletId} (outlet is OFF)`);
+        // Skip storing if any value is null or if power is 0 (outlet is OFF or incomplete data)
+        // This prevents database flooding with useless or incomplete entries
+        if (current === null || power === null || energy === null || power === 0) {
+          console.log(`Skipped storing for outlet ${outletId} (current: ${current}A, power: ${power}W, energy: ${energy}Wh - incomplete or zero data)`);
           return;
         }
 
-        // Store usage data in database (only meaningful data)
+        // Store usage data in database (only meaningful data with power > 0)
         await this.prisma.usageLog.create({
           data: {
             outletID: outletId,
-            current: data.current || null,
-            power: data.power || null,
-            energy: data.energy || null,
+            current,
+            power,
+            energy,
           },
         });
 

@@ -520,7 +520,7 @@ const PowerUsageChart: React.FC = () => {
           onPress: async () => {
             try {
               await api.clearAllUsageData();
-              Alert.alert("Success", "All usage data has been cleared. MQTT simulator will generate new data.");
+              Alert.alert("Success", "All usage data has been cleared successfully.");
             } catch (error) {
               Alert.alert("Error", "Failed to clear usage data. Please try again.");
               console.error("Error clearing data:", error);
