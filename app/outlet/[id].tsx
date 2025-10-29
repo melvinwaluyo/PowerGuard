@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Notifications from "expo-notifications";
 
 import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { useOutlets } from "@/context/OutletContext";
@@ -17,6 +18,7 @@ import {
 } from "@/types/outlet";
 import { TimerDurationValue } from "@/types/timer";
 import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
+import { getNotificationPreferences } from "@/utils/notificationPreferences";
 
 const LOG_CATEGORY_META: Record<
   OutletLogCategory,
@@ -134,6 +136,7 @@ export default function OutletDetailsScreen() {
   });
   const [timerLogs, setTimerLogs] = useState<OutletLogEntry[]>([]);
   const [isTimerActionLoading, setTimerActionLoading] = useState(false);
+  const [scheduledNotificationId, setScheduledNotificationId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!outlet) return;
@@ -334,13 +337,38 @@ export default function OutletDetailsScreen() {
       applyTimerStatus(status);
       await loadTimerLogs();
       await refreshOutlets();
+
+      // Schedule notification for when timer completes
+      const preferences = await getNotificationPreferences();
+      if (preferences.manualTimerCompleted) {
+        // Cancel any existing scheduled notification
+        if (scheduledNotificationId) {
+          await Notifications.cancelScheduledNotificationAsync(scheduledNotificationId);
+        }
+
+        // Schedule new notification
+        const notificationId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "⏰ Timer Completed",
+            body: `${outlet.name} timer finished. Outlet has been turned off.`,
+            sound: true,
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+          },
+          trigger: {
+            seconds: duration,
+          },
+        });
+
+        setScheduledNotificationId(notificationId);
+        console.log(`[Timer] Scheduled notification ${notificationId} for ${duration}s`);
+      }
     } catch (error) {
       console.error("Failed to start timer:", error);
       Alert.alert("Timer", "Failed to start timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
-  }, [outlet, outletId, timerPresetSeconds, applyTimerStatus, loadTimerLogs, refreshOutlets]);
+  }, [outlet, outletId, timerPresetSeconds, applyTimerStatus, loadTimerLogs, refreshOutlets, scheduledNotificationId]);
 
   const handleStopTimer = useCallback(async () => {
     if (!outlet || !Number.isFinite(outletId)) return;
@@ -351,25 +379,39 @@ export default function OutletDetailsScreen() {
       applyTimerStatus(status);
       await loadTimerLogs();
       await refreshOutlets();
+
+      // Cancel scheduled notification since timer was stopped
+      if (scheduledNotificationId) {
+        await Notifications.cancelScheduledNotificationAsync(scheduledNotificationId);
+        setScheduledNotificationId(null);
+        console.log(`[Timer] Cancelled scheduled notification ${scheduledNotificationId}`);
+      }
     } catch (error) {
       console.error("Failed to stop timer:", error);
       Alert.alert("Timer", "Failed to stop timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
-  }, [outlet, outletId, applyTimerStatus, loadTimerLogs, refreshOutlets]);
+  }, [outlet, outletId, applyTimerStatus, loadTimerLogs, refreshOutlets, scheduledNotificationId]);
 
   const handleTogglePower = useCallback(async () => {
     if (!outlet) return;
 
     try {
+      // If turning off outlet, cancel any scheduled timer notification
+      if (outlet.isOn && scheduledNotificationId) {
+        await Notifications.cancelScheduledNotificationAsync(scheduledNotificationId);
+        setScheduledNotificationId(null);
+        console.log(`[Timer] Cancelled scheduled notification ${scheduledNotificationId} due to power off`);
+      }
+
       await toggleOutlet(outlet.id);
     } finally {
       await refreshOutlets();
       await refreshTimerStatus();
       await loadTimerLogs();
     }
-  }, [outlet, toggleOutlet, refreshOutlets, refreshTimerStatus, loadTimerLogs]);
+  }, [outlet, toggleOutlet, refreshOutlets, refreshTimerStatus, loadTimerLogs, scheduledNotificationId]);
 
   const handleOpenRenameModal = () => {
     if (!outlet) return;

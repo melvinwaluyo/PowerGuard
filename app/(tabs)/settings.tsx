@@ -3,6 +3,7 @@ import AutoShutdownSection from "@/components/AutoShutdownSection";
 import { BottomNavigation } from "@/components/BottomNavigation";
 import GeofencingSection from "@/components/GeofencingSection";
 import PinLocationSection from "@/components/PinLocationSection";
+import NotificationPreferencesSection from "@/components/NotificationPreferencesSection";
 import { Platform, ScrollView, StatusBar, Text, View, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocation } from "@/context/LocationContext";
@@ -186,6 +187,7 @@ export default function SettingsScreen() {
             />
           </>
         )}
+        <NotificationPreferencesSection />
       </ScrollView>
       <BottomNavigation activeTab="settings" />
     </View>

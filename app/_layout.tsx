@@ -7,11 +7,30 @@ import { GeofenceMonitorProvider } from "@/context/GeofenceMonitorContext";
 import * as Updates from "expo-updates";
 import { useEffect } from "react";
 import { Alert, Platform } from "react-native";
+import { registerBackgroundFetch } from "@/tasks/backgroundFetch";
+import { isBackgroundLocationRunning } from "@/tasks/backgroundLocation";
 import "../global.css";
 
 export default function RootLayout() {
   useEffect(() => {
-    async function checkForUpdates() {
+    async function initializeApp() {
+      // Register background fetch task (only works in standalone builds, not Expo Go)
+      try {
+        await registerBackgroundFetch();
+        console.log("[App] Background fetch registered successfully");
+      } catch (error) {
+        console.warn("[App] Background fetch not available (requires standalone build):", error);
+      }
+
+      // Check background location status (only works in standalone builds, not Expo Go)
+      try {
+        const isBackgroundRunning = await isBackgroundLocationRunning();
+        console.log("[App] Background location running:", isBackgroundRunning);
+      } catch (error) {
+        console.warn("[App] Background location not available (requires standalone build):", error);
+      }
+
+      // Check for updates
       if (__DEV__) {
         // Skip update checks in development mode
         return;
@@ -31,7 +50,7 @@ export default function RootLayout() {
       }
     }
 
-    checkForUpdates();
+    initializeApp();
   }, []);
 
   return (

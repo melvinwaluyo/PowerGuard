@@ -357,10 +357,14 @@ class ApiService {
   }
 
   // Usage Aggregation APIs for Reporting Charts
-  async getHourlyUsage(powerstripId: number, date?: string) {
+  async getHourlyUsage(powerstripId: number, date?: string, all: boolean = false) {
     try {
-      const params = date ? `?date=${date}` : '';
-      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/hourly${params}`);
+      const params = new URLSearchParams();
+      if (date) params.append('date', date);
+      if (all) params.append('all', 'true');
+
+      const queryString = params.toString() ? `?${params}` : '';
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/hourly${queryString}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -385,11 +389,15 @@ class ApiService {
     }
   }
 
-  async getDailyUsage(powerstripId: number, year?: number, month?: number) {
+  async getDailyUsage(powerstripId: number, year?: number, month?: number, all: boolean = false) {
     try {
       const params = new URLSearchParams();
-      if (year) params.append('year', year.toString());
-      if (month) params.append('month', month.toString());
+      if (all) {
+        params.append('all', 'true');
+      } else {
+        if (year) params.append('year', year.toString());
+        if (month) params.append('month', month.toString());
+      }
 
       const url = `${this.baseUrl}/powerstrips/${powerstripId}/usage/daily${params.toString() ? `?${params}` : ''}`;
       const response = await fetch(url);
@@ -403,10 +411,17 @@ class ApiService {
     }
   }
 
-  async getMonthlyUsage(powerstripId: number, year?: number) {
+  async getMonthlyUsage(powerstripId: number, year?: number, all: boolean = false) {
     try {
-      const params = year ? `?year=${year}` : '';
-      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/monthly${params}`);
+      const params = new URLSearchParams();
+      if (all) {
+        params.append('all', 'true');
+      } else if (year) {
+        params.append('year', year.toString());
+      }
+
+      const queryString = params.toString() ? `?${params}` : '';
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/monthly${queryString}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

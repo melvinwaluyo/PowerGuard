@@ -3,6 +3,8 @@ import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import { AppState, Alert } from "react-native";
 import { api, GeofenceSetting, GeofenceEvaluationResponse } from "@/services/api";
+import { startBackgroundLocationUpdates, stopBackgroundLocationUpdates } from "@/tasks/backgroundLocation";
+import { getNotificationPreferences } from "@/utils/notificationPreferences";
 
 export const DEFAULT_POWERSTRIP_ID = 1;
 
@@ -129,6 +131,16 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
     ) => {
     // Don't send if geofencing is disabled
     if (!settings?.isEnabled) {
+      return;
+    }
+
+    // Check notification preferences
+    const preferences = await getNotificationPreferences();
+    const shouldNotify = reason === 'left_zone'
+      ? preferences.leftZoneWithOutletsOn
+      : preferences.turnedOnOutletOutsideZone;
+
+    if (!shouldNotify) {
       return;
     }
 
@@ -307,26 +319,31 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
     return () => clearIntervals();
   }, [status.countdownIsActive, status.countdownEndsAt, scheduleIntervals, clearIntervals]);
 
-  const stopWatching = useCallback(() => {
+  const stopWatching = useCallback(async () => {
     if (watchSubscriptionRef.current) {
       watchSubscriptionRef.current.remove();
       watchSubscriptionRef.current = null;
     }
     clearIntervals();
+    try {
+      await stopBackgroundLocationUpdates();
+    } catch (error) {
+      console.warn("[Geofence] Failed to stop background location:", error);
+    }
     lastCoordsRef.current = null;
     lastReportTimestampRef.current = 0;
   }, [clearIntervals]);
 
   const startWatching = useCallback(async () => {
     if (!settings?.isEnabled || settings.latitude == null || settings.longitude == null) {
-      stopWatching();
+      await stopWatching();
       setStatus(INITIAL_STATUS);
       return;
     }
 
     const { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
     if (permissionStatus !== Location.PermissionStatus.GRANTED) {
-      stopWatching();
+      await stopWatching();
       Alert.alert(
         "Geofence",
         "Location permission not granted. Geofence auto-shutdown cannot be activated.",
@@ -334,10 +351,38 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       return;
     }
 
+    // Check if foreground tracking is already active
     if (watchSubscriptionRef.current) {
       return;
     }
 
+    // Request background location permission (only works in standalone builds)
+    try {
+      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+      if (backgroundStatus !== Location.PermissionStatus.GRANTED) {
+        Alert.alert(
+          "Background Location Required",
+          "PowerGuard needs background location access to detect when you leave home with outlets on. Please enable 'Allow all the time' in your location settings.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Open Settings",
+              onPress: () => {
+                void Location.requestBackgroundPermissionsAsync();
+              }
+            }
+          ]
+        );
+      }
+
+      // Start background location tracking (will check if already registered internally)
+      await startBackgroundLocationUpdates();
+    } catch (error) {
+      console.warn("[Geofence] Background location not available (requires standalone build):", error);
+      // Continue with foreground-only tracking
+    }
+
+    // Keep foreground tracking for real-time updates when app is open
     const subscription = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.Balanced,
@@ -487,6 +532,11 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   useEffect(() => {
     void refreshSettings();
   }, [refreshSettings]);
+
+  // Request notification permissions on app startup
+  useEffect(() => {
+    void requestNotificationPermissions();
+  }, [requestNotificationPermissions]);
 
   useEffect(() => {
     void startWatching();
