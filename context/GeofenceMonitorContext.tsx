@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
-import { AppState, Alert } from "react-native";
+import { AppState, Alert, Platform } from "react-native";
 import { api, GeofenceSetting, GeofenceEvaluationResponse } from "@/services/api";
 import { startBackgroundLocationUpdates, stopBackgroundLocationUpdates } from "@/tasks/backgroundLocation";
 import { getNotificationPreferences } from "@/utils/notificationPreferences";
@@ -64,17 +64,53 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Create notification channels for Android
+async function setupNotificationChannels() {
+  if (Platform.OS === 'android') {
+    // Critical channel: Left zone with outlets on (bypasses DND, uses alarm sound)
+    // Sound file must be in: android/app/src/main/res/raw/alarm.wav
+    await Notifications.setNotificationChannelAsync('critical-alerts', {
+      name: 'Critical Safety Alerts',
+      description: 'Urgent alerts when leaving home with outlets still on',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'alarm.wav', // Custom alarm sound (must match filename in res/raw/)
+      vibrationPattern: [0, 500, 200, 500, 200, 500], // Long urgent pattern
+      enableLights: true,
+      lightColor: '#FF0000', // Red for urgency
+      enableVibrate: true,
+      bypassDnd: true, // Bypass Do Not Disturb
+      showBadge: true,
+    });
+
+    // Regular channel: Other geofence alerts (respects DND, default sound)
+    await Notifications.setNotificationChannelAsync('geofence-alerts', {
+      name: 'Geofence Alerts',
+      description: 'Notifications for geofence activity',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: null, // Use system default
+      vibrationPattern: [0, 250, 250, 250], // Standard pattern
+      enableLights: true,
+      lightColor: '#0F0E41', // App color
+      enableVibrate: true,
+      showBadge: true,
+    });
+  }
+}
+
+// Call setup on initialization
+setupNotificationChannels();
+
 export function GeofenceMonitorProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<GeofenceSetting | null>(null);
   const [status, setStatus] = useState<GeofenceStatusState>(INITIAL_STATUS);
   const [pendingRequest, setPendingRequest] = useState<PendingRequestState | null>(null);
   const [isResolvingRequest, setResolvingRequest] = useState(false);
 
-  const watchSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const lastReportTimestampRef = useRef<number>(0);
   const lastCoordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const shownRequestRef = useRef<number | null>(null);
   const previousZoneRef = useRef<GeofenceZone>("INSIDE");
+  const previousCountdownActiveRef = useRef<boolean>(false);
 const lastLeftZoneAlertRef = useRef<number>(0);
 const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   timestamp: 0,
@@ -172,20 +208,40 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       : `⚠️ You turned ON ${activeOutletCount} outlet${activeOutletCount > 1 ? 's' : ''} while outside home! Auto-shutdown in ${timerText}.`;
 
     try {
-      // Play loud sound
-      await playAlertSound();
+      // Determine notification channel and configuration based on reason
+      const isCritical = reason === 'left_zone';
+      const channelId = isCritical ? 'critical-alerts' : 'geofence-alerts';
+      const title = isCritical ? '🚨 PowerGuard CRITICAL ALERT' : '⚠️ PowerGuard Alert';
 
-      // Send notification with LOUD sound configuration
+      // Play loud sound for critical alerts only
+      if (isCritical) {
+        await playAlertSound();
+      }
+
+      // Send notification using appropriate channel
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '🚨 PowerGuard ALERT',
+          title,
           body: bodyText + ' Turn off manually or wait for timer.',
-          sound: true, // Use boolean for default LOUD sound
-          priority: Notifications.AndroidNotificationPriority.MAX,
-          vibrate: [0, 500, 200, 500, 200, 500], // Longer vibration pattern
-          sticky: true, // Keep notification visible
+          // Set sound explicitly (required for Android below 8.0 and as fallback)
+          sound: isCritical ? 'alarm.wav' : true,
+          priority: isCritical
+            ? Notifications.AndroidNotificationPriority.MAX
+            : Notifications.AndroidNotificationPriority.HIGH,
+          vibrate: isCritical
+            ? [0, 500, 200, 500, 200, 500] // Long urgent pattern for critical
+            : [0, 250, 250, 250], // Standard pattern for regular
+          sticky: isCritical, // Only keep critical alerts visible
+          data: {
+            type: 'geofence_alert',
+            reason,
+            isCritical,
+          },
         },
         trigger: null, // Show immediately
+        identifier: `geofence-alert-${reason}-${Date.now()}`,
+        // Use appropriate channel on Android
+        ...(Platform.OS === 'android' ? { channelId } : {}),
       });
 
       if (reason === 'left_zone') {
@@ -203,11 +259,43 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   const updateStatusFromEvaluation = useCallback(
     (evaluation: GeofenceEvaluationResponse) => {
       const previousZone = previousZoneRef.current;
+      const previousCountdownActive = previousCountdownActiveRef.current;
       const newZone = evaluation.zone;
 
       setStatus((prev) => {
-        const nextEndsAt =
-          evaluation.countdownEndsAt ?? (evaluation.countdownIsActive ? prev.countdownEndsAt : null);
+        // Determine the countdown end time
+        let nextEndsAt: string | null = null;
+
+        if (evaluation.countdownIsActive) {
+          if (evaluation.countdownEndsAt) {
+            // Backend provided a new countdown end time
+            // Only use it if it's earlier than our current countdown OR we don't have one yet
+            if (!prev.countdownEndsAt) {
+              // New countdown starting
+              console.log('[Geofence] Countdown starting, ends at:', evaluation.countdownEndsAt);
+              nextEndsAt = evaluation.countdownEndsAt;
+            } else {
+              // Countdown already active - don't let it jump forward in time
+              const newEndTime = new Date(evaluation.countdownEndsAt).getTime();
+              const currentEndTime = new Date(prev.countdownEndsAt).getTime();
+
+              if (newEndTime > currentEndTime) {
+                // Backend tried to add more time - reject it
+                console.warn('[Geofence] Backend tried to extend countdown - keeping original time');
+                console.log(`  Current ends: ${prev.countdownEndsAt} (${Math.round((currentEndTime - Date.now()) / 1000)}s remaining)`);
+                console.log(`  Backend sent: ${evaluation.countdownEndsAt} (${Math.round((newEndTime - Date.now()) / 1000)}s remaining)`);
+                nextEndsAt = prev.countdownEndsAt;
+              } else {
+                // Backend shortened the countdown or kept it the same - accept it
+                nextEndsAt = evaluation.countdownEndsAt;
+              }
+            }
+          } else {
+            // Keep existing countdown time
+            nextEndsAt = prev.countdownEndsAt;
+          }
+        }
+        // else: countdown not active, nextEndsAt stays null
 
         return {
           zone: evaluation.zone,
@@ -217,8 +305,6 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
           remainingSeconds: computeRemainingSeconds(nextEndsAt),
         };
       });
-
-      const previousCountdownActive = status.countdownIsActive;
 
       // Detect zone change from INSIDE to OUTSIDE (user left home)
       const justLeftZone = previousZone === "INSIDE" && newZone === "OUTSIDE" && evaluation.countdownIsActive;
@@ -267,8 +353,9 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
         lastTurnedOnOutsideAlertRef.current.timestamp = 0;
       }
 
-      // Update previous zone
+      // Update previous states for next evaluation
       previousZoneRef.current = newZone;
+      previousCountdownActiveRef.current = evaluation.countdownIsActive;
 
       if (evaluation.pendingRequest) {
         setPendingRequest({
@@ -306,13 +393,23 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
         }));
       }, 1000);
 
-      if (lastCoordsRef.current) {
-        pollingIntervalRef.current = setInterval(() => {
-          void reportLocation(lastCoordsRef.current!.latitude, lastCoordsRef.current!.longitude, true);
-        }, 5000); // Poll every 5 seconds during countdown for faster detection
-      }
+      // During countdown, poll location every 5 seconds to detect if user returns home
+      pollingIntervalRef.current = setInterval(async () => {
+        try {
+          const position = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          lastCoordsRef.current = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          };
+          void reportLocation(position.coords.latitude, position.coords.longitude, true);
+        } catch (error) {
+          console.warn("[Geofence] Failed to get location during countdown:", error);
+        }
+      }, 5000); // Poll every 5 seconds during countdown for faster detection
     }
-  }, [clearIntervals, computeRemainingSeconds, status.countdownEndsAt, status.countdownIsActive]);
+  }, [clearIntervals, computeRemainingSeconds, reportLocation, status.countdownEndsAt, status.countdownIsActive]);
 
   useEffect(() => {
     scheduleIntervals();
@@ -320,13 +417,11 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   }, [status.countdownIsActive, status.countdownEndsAt, scheduleIntervals, clearIntervals]);
 
   const stopWatching = useCallback(async () => {
-    if (watchSubscriptionRef.current) {
-      watchSubscriptionRef.current.remove();
-      watchSubscriptionRef.current = null;
-    }
+    // No foreground subscription to remove anymore
     clearIntervals();
     try {
       await stopBackgroundLocationUpdates();
+      console.log("[Geofence] Background location tracking stopped");
     } catch (error) {
       console.warn("[Geofence] Failed to stop background location:", error);
     }
@@ -341,23 +436,31 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       return;
     }
 
-    const { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
-    if (permissionStatus !== Location.PermissionStatus.GRANTED) {
-      await stopWatching();
-      Alert.alert(
-        "Geofence",
-        "Location permission not granted. Geofence auto-shutdown cannot be activated.",
-      );
-      return;
-    }
-
-    // Check if foreground tracking is already active
-    if (watchSubscriptionRef.current) {
-      return;
-    }
-
-    // Request background location permission (only works in standalone builds)
+    // Only request background location permission - no foreground tracking needed
+    // Users won't have app open when they leave home anyway
     try {
+      // First check if we have foreground permission (required before background on Android)
+      const { status: foregroundStatus } = await Location.getForegroundPermissionsAsync();
+
+      if (foregroundStatus !== Location.PermissionStatus.GRANTED) {
+        // Need foreground first (Android requirement), but only if app is in foreground
+        if (AppState.currentState === 'active') {
+          const { status: newForegroundStatus } = await Location.requestForegroundPermissionsAsync();
+          if (newForegroundStatus !== Location.PermissionStatus.GRANTED) {
+            await stopWatching();
+            Alert.alert(
+              "Location Permission Required",
+              "PowerGuard needs location access to detect when you leave home with outlets on.",
+            );
+            return;
+          }
+        } else {
+          console.warn('[Geofence] Skipping permission request - app not in foreground');
+          return;
+        }
+      }
+
+      // Now request background location permission
       const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
       if (backgroundStatus !== Location.PermissionStatus.GRANTED) {
         Alert.alert(
@@ -373,30 +476,34 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
             }
           ]
         );
+        // Don't return - still try to start background tracking in case permission was granted
       }
 
-      // Start background location tracking (will check if already registered internally)
+      // Start background location tracking (works even when app is closed)
       await startBackgroundLocationUpdates();
+      console.log("[Geofence] Background location tracking started");
+
+      // Get initial location for UI display (one-time, not continuous)
+      try {
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        lastCoordsRef.current = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        };
+        void reportLocation(position.coords.latitude, position.coords.longitude, true);
+      } catch (error) {
+        console.warn("[Geofence] Failed to get initial position:", error);
+      }
+
     } catch (error) {
-      console.warn("[Geofence] Background location not available (requires standalone build):", error);
-      // Continue with foreground-only tracking
+      console.error("[Geofence] Failed to start background tracking:", error);
+      Alert.alert(
+        "Geofencing Error",
+        "Failed to start location tracking. This feature requires a standalone build (not Expo Go)."
+      );
     }
-
-    // Keep foreground tracking for real-time updates when app is open
-    const subscription = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 3000,  // Check every 3 seconds (faster response)
-        distanceInterval: 10, // Update when moved 10 meters (more sensitive)
-      },
-      (location) => {
-        const coords = location.coords;
-        lastCoordsRef.current = { latitude: coords.latitude, longitude: coords.longitude };
-        void reportLocation(coords.latitude, coords.longitude, false);
-      },
-    );
-
-    watchSubscriptionRef.current = subscription;
   }, [settings?.isEnabled, settings?.latitude, settings?.longitude, stopWatching]);
 
   const reportLocation = useCallback(
@@ -533,34 +640,55 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
     void refreshSettings();
   }, [refreshSettings]);
 
-  // Request notification permissions on app startup
+  // Request notification permissions on app startup - ONLY in foreground
   useEffect(() => {
-    void requestNotificationPermissions();
+    const requestPermissionsWhenReady = async () => {
+      // Wait for app to be in foreground to avoid "Background activity launch blocked"
+      if (AppState.currentState === 'active') {
+        await requestNotificationPermissions();
+      }
+    };
+    void requestPermissionsWhenReady();
   }, [requestNotificationPermissions]);
 
   useEffect(() => {
-    void startWatching();
+    // Only start watching if geofencing is enabled AND has valid coordinates
+    // This prevents requesting permissions on app startup
+    if (settings?.isEnabled && settings.latitude != null && settings.longitude != null) {
+      void startWatching();
+    } else {
+      void stopWatching();
+    }
     return () => {
       stopWatching();
     };
   }, [startWatching, stopWatching, settings?.isEnabled, settings?.latitude, settings?.longitude]);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) => {
+    const subscription = AppState.addEventListener("change", async (state) => {
       if (state === "active" && settings?.isEnabled) {
-        void startWatching();
-        if (lastCoordsRef.current) {
-          void reportLocation(lastCoordsRef.current.latitude, lastCoordsRef.current.longitude, true);
+        // When app comes to foreground, just get current location once for UI update
+        // Background tracking continues regardless of app state
+        try {
+          const position = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          lastCoordsRef.current = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          };
+          void reportLocation(position.coords.latitude, position.coords.longitude, true);
+        } catch (error) {
+          console.warn("[Geofence] Failed to get location on app resume:", error);
         }
-      } else if (state.match(/inactive|background/)) {
-        // keep watcher to allow background updates if supported; do nothing
       }
+      // Background tracking handles inactive/background states automatically
     });
 
     return () => {
       subscription.remove();
     };
-  }, [settings?.isEnabled, startWatching, reportLocation]);
+  }, [settings?.isEnabled, reportLocation]);
 
   useEffect(() => {
     if (!pendingRequest || isResolvingRequest) {

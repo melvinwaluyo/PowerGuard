@@ -26,11 +26,7 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "PowerGuard needs your location in the background to detect when you leave home with outlets still on and automatically shut them down.",
         "NSLocationAlwaysUsageDescription": "PowerGuard needs background location access to detect when you leave home with outlets still on.",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": [
-          "location",
-          "fetch",
-          "remote-notification"
-        ],
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"],
         "NSMicrophoneUsageDescription": "PowerGuard needs access to play alert sounds when you leave home with outlets still on."
       }
     },
@@ -86,7 +82,7 @@
         {
           "icon": "./assets/icons/adaptive-icon.png",
           "color": "#0F0E41",
-          "sounds": [],
+          "sounds": ["./assets/sounds/alarm.wav"],
           "mode": "production"
         }
       ],
