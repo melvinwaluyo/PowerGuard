@@ -3,6 +3,8 @@ import { Outlet, TimerSource } from "@/types/outlet";
 import { api } from "@/services/api";
 import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
 import * as Notifications from "expo-notifications";
+import { getLastTimerSeconds } from "@/utils/timerStorage";
+import { getShownNotificationIds, saveShownNotificationIds } from "@/utils/notificationTracking";
 
 interface OutletContextValue {
   outlets: Outlet[];
@@ -28,9 +30,9 @@ const formatRuntime = (seconds: number | null): string => {
 
 const DEFAULT_TIMER_SECONDS = 15 * 60;
 
-const buildTimerState = (backendOutlet: any) => {
-  const rawDuration = backendOutlet.timerDuration ?? DEFAULT_TIMER_SECONDS;
-  const presetSeconds = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : DEFAULT_TIMER_SECONDS;
+const buildTimerState = (backendOutlet: any, fallbackDefault: number = DEFAULT_TIMER_SECONDS) => {
+  const rawDuration = backendOutlet.timerDuration ?? fallbackDefault;
+  const presetSeconds = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : fallbackDefault;
   const endsAtRaw = backendOutlet.timerEndsAt ? new Date(backendOutlet.timerEndsAt) : null;
   const isActive = Boolean(backendOutlet.timerIsActive && endsAtRaw);
   const remainingSeconds =
@@ -51,11 +53,11 @@ const buildTimerState = (backendOutlet: any) => {
 };
 
 // Helper function to transform backend outlet data to frontend Outlet type
-const transformOutlet = (backendOutlet: any): Outlet => {
+const transformOutlet = (backendOutlet: any, fallbackDefault?: number): Outlet => {
   const latestUsage = backendOutlet.usageLogs?.[0];
   const power = latestUsage?.power || 0;
   const isOn = backendOutlet.state || false;
-  const { timer, presetSeconds } = buildTimerState(backendOutlet);
+  const { timer, presetSeconds } = buildTimerState(backendOutlet, fallbackDefault);
 
   return {
     id: backendOutlet.outletID,
@@ -77,7 +79,9 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [togglingOutlets, setTogglingOutlets] = useState<Set<number>>(new Set());
+  const [lastTimerDefault, setLastTimerDefault] = useState<number>(DEFAULT_TIMER_SECONDS);
   const lastNotificationCheckRef = useRef<string>(new Date().toISOString());
+  const shownNotificationIds = useRef<Set<number>>(new Set()); // Track shown notifications to prevent duplicates
   const lastGeofenceShutdownNotificationRef = useRef<{ timestamp: number; message: string | null; outletCount: number }>({
     timestamp: 0,
     message: null,
@@ -98,6 +102,38 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   // Access geofence context to check zone status and trigger notifications
   const geofenceContext = useGeofenceMonitor();
 
+  // Load last timer default on mount
+  useEffect(() => {
+    const loadTimerDefault = async () => {
+      const lastTimer = await getLastTimerSeconds();
+      setLastTimerDefault(lastTimer);
+    };
+    void loadTimerDefault();
+  }, []);
+
+  // Load shown notification IDs from AsyncStorage on mount
+  useEffect(() => {
+    const loadShownIds = async () => {
+      const ids = await getShownNotificationIds();
+      shownNotificationIds.current = ids;
+      console.log(`[Notifications] Loaded ${ids.size} shown notification IDs from storage`);
+    };
+    void loadShownIds();
+  }, []);
+
+  // Save shown notification IDs to AsyncStorage on unmount and periodically
+  useEffect(() => {
+    const saveInterval = setInterval(() => {
+      void saveShownNotificationIds(shownNotificationIds.current);
+    }, 30000); // Save every 30 seconds
+
+    return () => {
+      clearInterval(saveInterval);
+      // Save on unmount
+      void saveShownNotificationIds(shownNotificationIds.current);
+    };
+  }, []);
+
   // Reset geofence shutdown notification cooldown when countdown is no longer active
   useEffect(() => {
     if (!geofenceContext.status.countdownIsActive) {
@@ -113,14 +149,14 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   const refreshOutlets = useCallback(async () => {
     try {
       const data = await api.getOutlets();
-      const transformedOutlets = data.map(transformOutlet);
+      const transformedOutlets = data.map((outlet) => transformOutlet(outlet, lastTimerDefault));
       setOutlets(transformedOutlets);
     } catch (error) {
       console.error('Failed to fetch outlets:', error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [lastTimerDefault]);
 
   // Load outlets on mount
   useEffect(() => {
@@ -263,6 +299,14 @@ export function OutletProvider({ children }: { children: ReactNode }) {
           }> = [];
 
           for (const notification of notifications) {
+            const notificationId = typeof notification.notificationID === 'number' ? notification.notificationID : 0;
+
+            // Skip if we've already shown this notification
+            if (shownNotificationIds.current.has(notificationId)) {
+              console.log(`[Notifications] Skipping duplicate notification ${notificationId}`);
+              continue;
+            }
+
             const message = notification.message ?? "";
             const isGeofence = message.includes("Geofence");
             const isTimer = message.includes("Timer completed");
@@ -272,10 +316,16 @@ export function OutletProvider({ children }: { children: ReactNode }) {
 
             if (isGeofenceShutdown) {
               geofenceShutdownNotifications.push(notification);
+              shownNotificationIds.current.add(notificationId);
               continue;
             }
 
             otherNotifications.push({ notification, isGeofence, isTimer });
+            shownNotificationIds.current.add(notificationId);
+
+            if (isTimer) {
+              console.log(`[Notifications] New timer completion notification ${notificationId} for outlet ${outlet.id}: "${message}"`);
+            }
           }
 
           for (const { notification, isGeofence, isTimer } of otherNotifications) {

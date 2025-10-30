@@ -3,7 +3,7 @@ import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import { AppState, Alert, Platform } from "react-native";
 import { api, GeofenceSetting, GeofenceEvaluationResponse } from "@/services/api";
-import { startBackgroundLocationUpdates, stopBackgroundLocationUpdates } from "@/tasks/backgroundLocation";
+import { startGeofencing, stopGeofencing, updateGeofenceRegion } from "@/tasks/backgroundGeofencing";
 import { getNotificationPreferences } from "@/utils/notificationPreferences";
 
 export const DEFAULT_POWERSTRIP_ID = 1;
@@ -394,6 +394,8 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       }, 1000);
 
       // During countdown, poll location every 5 seconds to detect if user returns home
+      // This supplements native geofencing with faster detection during the critical countdown period
+      // Native geofencing events (ENTER) might be delayed, so we check frequently during countdown
       pollingIntervalRef.current = setInterval(async () => {
         try {
           const position = await Location.getCurrentPositionAsync({
@@ -417,13 +419,12 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   }, [status.countdownIsActive, status.countdownEndsAt, scheduleIntervals, clearIntervals]);
 
   const stopWatching = useCallback(async () => {
-    // No foreground subscription to remove anymore
     clearIntervals();
     try {
-      await stopBackgroundLocationUpdates();
-      console.log("[Geofence] Background location tracking stopped");
+      await stopGeofencing();
+      console.log("[Geofence] Native geofencing stopped");
     } catch (error) {
-      console.warn("[Geofence] Failed to stop background location:", error);
+      console.warn("[Geofence] Failed to stop geofencing:", error);
     }
     lastCoordsRef.current = null;
     lastReportTimestampRef.current = 0;
@@ -436,8 +437,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       return;
     }
 
-    // Only request background location permission - no foreground tracking needed
-    // Users won't have app open when they leave home anyway
+    // Request location permissions (required for geofencing)
     try {
       // First check if we have foreground permission (required before background on Android)
       const { status: foregroundStatus } = await Location.getForegroundPermissionsAsync();
@@ -476,14 +476,23 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
             }
           ]
         );
-        // Don't return - still try to start background tracking in case permission was granted
+        // Don't return - still try to start geofencing in case permission was granted
       }
 
-      // Start background location tracking (works even when app is closed)
-      await startBackgroundLocationUpdates();
-      console.log("[Geofence] Background location tracking started");
+      // Start native geofencing (event-driven, battery efficient)
+      const success = await startGeofencing(
+        settings.latitude,
+        settings.longitude,
+        settings.radius ?? 1500
+      );
 
-      // Get initial location for UI display (one-time, not continuous)
+      if (success) {
+        console.log("[Geofence] Native geofencing started successfully");
+      } else {
+        console.warn("[Geofence] Failed to start native geofencing");
+      }
+
+      // Get initial location for UI display and immediate evaluation
       try {
         const position = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
@@ -498,13 +507,13 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       }
 
     } catch (error) {
-      console.error("[Geofence] Failed to start background tracking:", error);
+      console.error("[Geofence] Failed to start geofencing:", error);
       Alert.alert(
         "Geofencing Error",
-        "Failed to start location tracking. This feature requires a standalone build (not Expo Go)."
+        "Failed to start geofencing. This feature requires a standalone build (not Expo Go)."
       );
     }
-  }, [settings?.isEnabled, settings?.latitude, settings?.longitude, stopWatching]);
+  }, [settings?.isEnabled, settings?.latitude, settings?.longitude, settings?.radius, stopWatching, reportLocation]);
 
   const reportLocation = useCallback(
     async (latitude: number, longitude: number, force = false) => {
@@ -654,6 +663,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   useEffect(() => {
     // Only start watching if geofencing is enabled AND has valid coordinates
     // This prevents requesting permissions on app startup
+    // When lat/lng/radius changes, startWatching will update the geofence region
     if (settings?.isEnabled && settings.latitude != null && settings.longitude != null) {
       void startWatching();
     } else {
@@ -662,7 +672,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
     return () => {
       stopWatching();
     };
-  }, [startWatching, stopWatching, settings?.isEnabled, settings?.latitude, settings?.longitude]);
+  }, [startWatching, stopWatching, settings?.isEnabled, settings?.latitude, settings?.longitude, settings?.radius]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", async (state) => {

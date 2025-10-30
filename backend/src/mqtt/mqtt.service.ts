@@ -180,12 +180,30 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       } else {
         // For MANUAL timers, create individual notification
         const outletName = currentOutlet?.name || `Outlet ${currentOutlet?.index || outletId}`;
-        const durationMinutes = Math.round((currentOutlet?.timerDuration ?? durationSeconds) / 60);
+        const totalSeconds = currentOutlet?.timerDuration ?? durationSeconds;
+
+        // Format duration based on length
+        let durationText: string;
+        if (totalSeconds < 60) {
+          durationText = `${totalSeconds} second(s)`;
+        } else if (totalSeconds < 3600) {
+          const minutes = Math.floor(totalSeconds / 60);
+          const seconds = totalSeconds % 60;
+          durationText = seconds > 0
+            ? `${minutes} minute(s) ${seconds} second(s)`
+            : `${minutes} minute(s)`;
+        } else {
+          const hours = Math.floor(totalSeconds / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+          durationText = minutes > 0
+            ? `${hours} hour(s) ${minutes} minute(s)`
+            : `${hours} hour(s)`;
+        }
 
         await this.prisma.notificationLog.create({
           data: {
             outletID: outletId,
-            message: `Timer completed: ${outletName} turned off after ${durationMinutes} minute(s)`
+            message: `Timer completed: ${outletName} turned off after ${durationText}`
           }
         });
       }

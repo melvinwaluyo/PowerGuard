@@ -1,9 +1,8 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Notifications from "expo-notifications";
 
 import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { useOutlets } from "@/context/OutletContext";
@@ -18,7 +17,7 @@ import {
 } from "@/types/outlet";
 import { TimerDurationValue } from "@/types/timer";
 import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
-import { getNotificationPreferences } from "@/utils/notificationPreferences";
+import { getLastTimerSeconds, saveLastTimerSeconds } from "@/utils/timerStorage";
 
 const LOG_CATEGORY_META: Record<
   OutletLogCategory,
@@ -136,13 +135,50 @@ export default function OutletDetailsScreen() {
   });
   const [timerLogs, setTimerLogs] = useState<OutletLogEntry[]>([]);
   const [isTimerActionLoading, setTimerActionLoading] = useState(false);
-  const [scheduledNotificationId, setScheduledNotificationId] = useState<string | null>(null);
+  const isUpdatingTimerPresetRef = useRef(false);
+
+  // Load last timer value on mount
+  useEffect(() => {
+    let mounted = true;
+    const loadLastTimer = async () => {
+      const lastTimer = await getLastTimerSeconds();
+      console.log(`[Timer] Loaded last timer value from storage: ${lastTimer}s (${Math.floor(lastTimer/60)} minutes)`);
+
+      // Only set if component is still mounted and outlet doesn't have a timer preset
+      if (mounted && !outlet?.timerPresetSeconds) {
+        console.log(`[Timer] Outlet has no preset, using loaded value: ${lastTimer}s`);
+        setTimerPresetSeconds(lastTimer);
+        if (!outlet?.timer?.isActive) {
+          setCountdownSeconds(lastTimer);
+        }
+      } else if (mounted) {
+        console.log(`[Timer] Outlet already has preset: ${outlet.timerPresetSeconds}s, keeping it`);
+      }
+    };
+    void loadLastTimer();
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // Run once on mount
 
   useEffect(() => {
     if (!outlet) return;
+
+    // Skip updates while we're actively changing the timer preset to prevent flickering
+    if (isUpdatingTimerPresetRef.current) {
+      return;
+    }
+
     setTimerState(outlet.timer);
-    setTimerPresetSeconds(outlet.timerPresetSeconds ?? DEFAULT_TIMER_SECONDS);
-  }, [outlet?.timer, outlet?.timerPresetSeconds, outlet]);
+    const newPreset = outlet.timerPresetSeconds ?? DEFAULT_TIMER_SECONDS;
+    setTimerPresetSeconds(prev => {
+      if (prev !== newPreset) {
+        console.log(`[Timer] Timer preset changed: ${prev}s → ${newPreset}s`);
+      }
+      return newPreset;
+    });
+  }, [outlet?.timer, outlet?.timerPresetSeconds]);
 
   const applyTimerStatus = useCallback(
     (status: TimerStatusResponse) => {
@@ -270,6 +306,9 @@ export default function OutletDetailsScreen() {
       const previousPreset = timerPresetSeconds;
       const previousState = timerState;
 
+      // Mark that we're updating to prevent flickering
+      isUpdatingTimerPresetRef.current = true;
+
       const optimisticState: OutletTimerState =
         timerState && timerState.isActive
           ? { ...timerState }
@@ -296,6 +335,8 @@ export default function OutletDetailsScreen() {
         applyTimerStatus(status);
         await loadTimerLogs();
         await refreshOutlets();
+        // Save to persistent storage for future use
+        await saveLastTimerSeconds(safeSeconds);
       } catch (error) {
         console.error("Failed to update timer preset:", error);
         setTimerState(previousState ?? null);
@@ -308,6 +349,11 @@ export default function OutletDetailsScreen() {
           timerPresetSeconds: previousPreset,
         });
         throw error;
+      } finally {
+        // Allow updates again after a short delay to ensure backend has updated
+        setTimeout(() => {
+          isUpdatingTimerPresetRef.current = false;
+        }, 500);
       }
     },
     [
@@ -330,6 +376,7 @@ export default function OutletDetailsScreen() {
     }
 
     const duration = Math.max(1, timerPresetSeconds);
+    console.log(`[Timer] Starting timer for outlet ${outlet.id} (${outlet.name}) with duration ${duration}s (${Math.floor(duration/60)} minutes)`);
 
     try {
       setTimerActionLoading(true);
@@ -338,37 +385,15 @@ export default function OutletDetailsScreen() {
       await loadTimerLogs();
       await refreshOutlets();
 
-      // Schedule notification for when timer completes
-      const preferences = await getNotificationPreferences();
-      if (preferences.manualTimerCompleted) {
-        // Cancel any existing scheduled notification
-        if (scheduledNotificationId) {
-          await Notifications.cancelScheduledNotificationAsync(scheduledNotificationId);
-        }
-
-        // Schedule new notification
-        const notificationId = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "⏰ Timer Completed",
-            body: `${outlet.name} timer finished. Outlet has been turned off.`,
-            sound: true,
-            priority: Notifications.AndroidNotificationPriority.HIGH,
-          },
-          trigger: {
-            seconds: duration,
-          },
-        });
-
-        setScheduledNotificationId(notificationId);
-        console.log(`[Timer] Scheduled notification ${notificationId} for ${duration}s`);
-      }
+      // Note: Timer completion notifications are handled by the backend
+      // and shown via OutletContext polling - no need to schedule local notifications
     } catch (error) {
-      console.error("Failed to start timer:", error);
+      console.error("[Timer] Failed to start timer:", error);
       Alert.alert("Timer", "Failed to start timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
-  }, [outlet, outletId, timerPresetSeconds, applyTimerStatus, loadTimerLogs, refreshOutlets, scheduledNotificationId]);
+  }, [outlet, outletId, timerPresetSeconds, applyTimerStatus, loadTimerLogs, refreshOutlets]);
 
   const handleStopTimer = useCallback(async () => {
     if (!outlet || !Number.isFinite(outletId)) return;
@@ -379,39 +404,25 @@ export default function OutletDetailsScreen() {
       applyTimerStatus(status);
       await loadTimerLogs();
       await refreshOutlets();
-
-      // Cancel scheduled notification since timer was stopped
-      if (scheduledNotificationId) {
-        await Notifications.cancelScheduledNotificationAsync(scheduledNotificationId);
-        setScheduledNotificationId(null);
-        console.log(`[Timer] Cancelled scheduled notification ${scheduledNotificationId}`);
-      }
     } catch (error) {
       console.error("Failed to stop timer:", error);
       Alert.alert("Timer", "Failed to stop timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
-  }, [outlet, outletId, applyTimerStatus, loadTimerLogs, refreshOutlets, scheduledNotificationId]);
+  }, [outlet, outletId, applyTimerStatus, loadTimerLogs, refreshOutlets]);
 
   const handleTogglePower = useCallback(async () => {
     if (!outlet) return;
 
     try {
-      // If turning off outlet, cancel any scheduled timer notification
-      if (outlet.isOn && scheduledNotificationId) {
-        await Notifications.cancelScheduledNotificationAsync(scheduledNotificationId);
-        setScheduledNotificationId(null);
-        console.log(`[Timer] Cancelled scheduled notification ${scheduledNotificationId} due to power off`);
-      }
-
       await toggleOutlet(outlet.id);
     } finally {
       await refreshOutlets();
       await refreshTimerStatus();
       await loadTimerLogs();
     }
-  }, [outlet, toggleOutlet, refreshOutlets, refreshTimerStatus, loadTimerLogs, scheduledNotificationId]);
+  }, [outlet, toggleOutlet, refreshOutlets, refreshTimerStatus, loadTimerLogs]);
 
   const handleOpenRenameModal = () => {
     if (!outlet) return;
@@ -633,8 +644,11 @@ function StatusSection({
   const [isSavingPreset, setSavingPreset] = useState(false);
 
   useEffect(() => {
-    setDraftTimer(secondsToDuration(timerPresetSeconds));
-  }, [timerPresetSeconds]);
+    // Only update draft when modal is not visible to prevent flickering while editing
+    if (!modalVisible && !isSavingPreset) {
+      setDraftTimer(secondsToDuration(timerPresetSeconds));
+    }
+  }, [timerPresetSeconds, modalVisible, isSavingPreset]);
 
   const handleEditTimer = () => {
     setDraftTimer(secondsToDuration(timerPresetSeconds));

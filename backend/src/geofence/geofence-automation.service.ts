@@ -338,11 +338,35 @@ export class GeofenceAutomationService {
   }
 
   private async createNotification(outletId: number, message: string) {
+    // Check for duplicate notifications in the last 30 seconds
+    const thirtySecondsAgo = new Date(Date.now() - 30000);
+    const recentNotification = await this.prisma.notificationLog.findFirst({
+      where: {
+        outletID: outletId,
+        message,
+        createdAt: {
+          gte: thirtySecondsAgo,
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    if (recentNotification) {
+      this.logger.log(
+        `Skipping duplicate notification for outlet ${outletId}: "${message}" (last sent ${Math.round((Date.now() - recentNotification.createdAt.getTime()) / 1000)}s ago)`,
+      );
+      return;
+    }
+
     await this.prisma.notificationLog.create({
       data: {
         outletID: outletId,
         message,
       },
     });
+
+    this.logger.log(`Created notification for outlet ${outletId}: "${message}"`);
   }
 }

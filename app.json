@@ -72,9 +72,9 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "PowerGuard needs your location in the background to detect when you leave home with outlets still on and automatically shut them down.",
+          "locationAlwaysAndWhenInUsePermission": "PowerGuard uses geofencing to detect when you leave home with outlets still on and automatically shut them down.",
           "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
+          "isAndroidForegroundServiceEnabled": false
         }
       ],
       [

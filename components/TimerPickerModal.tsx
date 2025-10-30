@@ -43,16 +43,23 @@ export function TimerPickerModal({
       statusBarTranslucent={true}
       onRequestClose={onCancel}
     >
-      <View className="flex-1 justify-center items-center bg-black/50">
-        <TouchableOpacity
-          activeOpacity={1}
-          className="flex-1 w-full"
-          onPress={onCancel}
-        />
+      <View className="flex-1 justify-center items-center" pointerEvents="box-none">
+        {/* Background overlay - separate from content for better touch handling */}
+        <View
+          className="absolute inset-0 bg-black/50"
+          pointerEvents="auto"
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            className="flex-1"
+            onPress={onCancel}
+          />
+        </View>
 
         {/* Modal Content */}
         <View
           className="bg-white rounded-3xl mx-5 overflow-hidden"
+          pointerEvents="auto"
           style={{
             maxWidth: 400,
             width: '90%',
@@ -115,12 +122,6 @@ export function TimerPickerModal({
             </TouchableOpacity>
           </View>
         </View>
-
-        <TouchableOpacity
-          activeOpacity={1}
-          className="flex-1 w-full"
-          onPress={onCancel}
-        />
       </View>
     </Modal>
   );

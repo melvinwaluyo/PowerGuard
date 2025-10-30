@@ -8,7 +8,7 @@ import * as Updates from "expo-updates";
 import { useEffect } from "react";
 import { Alert, Platform } from "react-native";
 import { registerBackgroundFetch } from "@/tasks/backgroundFetch";
-import { isBackgroundLocationRunning } from "@/tasks/backgroundLocation";
+import { isGeofencingActive } from "@/tasks/backgroundGeofencing";
 import "../global.css";
 
 export default function RootLayout() {
@@ -22,12 +22,12 @@ export default function RootLayout() {
         console.warn("[App] Background fetch not available (requires standalone build):", error);
       }
 
-      // Check background location status (only works in standalone builds, not Expo Go)
+      // Check geofencing status (only works in standalone builds, not Expo Go)
       try {
-        const isBackgroundRunning = await isBackgroundLocationRunning();
-        console.log("[App] Background location running:", isBackgroundRunning);
+        const isRunning = await isGeofencingActive();
+        console.log("[App] Native geofencing running:", isRunning);
       } catch (error) {
-        console.warn("[App] Background location not available (requires standalone build):", error);
+        console.warn("[App] Geofencing not available (requires standalone build):", error);
       }
 
       // Check for updates

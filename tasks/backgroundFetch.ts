@@ -1,12 +1,38 @@
 import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
 import * as Notifications from "expo-notifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/services/api";
 import { getNotificationPreferences } from "@/utils/notificationPreferences";
+import { getShownNotificationIds, saveShownNotificationIds } from "@/utils/notificationTracking";
 
 const BACKGROUND_FETCH_TASK = "background-fetch-task";
+const LAST_CHECK_TIMESTAMP_KEY = "last_notification_check";
 
 console.log("[Background Fetch] Task definition loaded");
+
+// Helper to get last check timestamp
+async function getLastCheckTimestamp(): Promise<Date> {
+  try {
+    const stored = await AsyncStorage.getItem(LAST_CHECK_TIMESTAMP_KEY);
+    if (stored) {
+      return new Date(stored);
+    }
+  } catch (error) {
+    console.error("[Background Fetch] Failed to load last check timestamp:", error);
+  }
+  // Default to 10 minutes ago
+  return new Date(Date.now() - 600000);
+}
+
+// Helper to save last check timestamp
+async function saveLastCheckTimestamp(timestamp: Date): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LAST_CHECK_TIMESTAMP_KEY, timestamp.toISOString());
+  } catch (error) {
+    console.error("[Background Fetch] Failed to save last check timestamp:", error);
+  }
+}
 
 // Define the background fetch task
 TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
@@ -14,50 +40,74 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
   console.log(`[Background Fetch] Task triggered at ${timestamp}`);
 
   try {
-    console.log("[Background Fetch] Checking for timer updates...");
-
     // Get notification preferences
     const preferences = await getNotificationPreferences();
 
+    // Get the last check timestamp
+    const lastCheck = await getLastCheckTimestamp();
+    const shownIds = await getShownNotificationIds();
+
+    console.log(`[Background Fetch] Checking notifications since ${lastCheck.toISOString()}`);
+
     // Fetch all outlets
     const outlets = await api.getOutlets();
-    const now = Date.now();
+    let newNotificationCount = 0;
 
-    // Check for expired timers
+    // Check each outlet for new notifications
     for (const outlet of outlets) {
-      if (outlet.timerIsActive && outlet.timerEndsAt) {
-        const endsAt = new Date(outlet.timerEndsAt).getTime();
-        const isExpired = endsAt <= now;
-        const timeSinceExpiry = now - endsAt;
+      try {
+        const notifications = await api.getOutletNotifications(outlet.outletID, 5, lastCheck.toISOString());
 
-        // If timer expired recently (within last 5 minutes), notify user
-        if (isExpired && timeSinceExpiry < 300000) {
-          const outletName = outlet.name || `Outlet ${outlet.index}`;
+        for (const notification of notifications) {
+          const notificationId = typeof notification.notificationID === 'number' ? notification.notificationID : 0;
 
-          // Check if it's a manual timer or geofence timer
-          const isManualTimer = outlet.timerSource === "MANUAL";
-          const shouldNotify = isManualTimer
-            ? preferences.manualTimerCompleted
-            : preferences.geofenceTimerCompleted;
+          // Skip if already shown
+          if (shownIds.has(notificationId)) {
+            continue;
+          }
 
-          if (shouldNotify) {
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: "⏰ Timer Completed",
-                body: `${outletName} timer has completed and outlet has been turned off.`,
-                sound: true,
-                priority: Notifications.AndroidNotificationPriority.DEFAULT,
-                data: { outletId: outlet.outletID },
-              },
-              trigger: null,
-            });
+          const message = notification.message ?? "";
+          const isTimer = message.includes("Timer completed");
+          const isGeofence = message.includes("Geofence");
+
+          // Only show timer completion notifications in background
+          if (isTimer) {
+            const isManualTimer = !isGeofence;
+            const shouldNotify = isManualTimer
+              ? preferences.manualTimerCompleted
+              : preferences.geofenceTimerCompleted;
+
+            if (shouldNotify) {
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: "⏰ Timer Completed",
+                  body: message,
+                  sound: true,
+                  priority: Notifications.AndroidNotificationPriority.HIGH,
+                  data: { outletId: outlet.outletID, notificationId },
+                },
+                trigger: null,
+              });
+
+              shownIds.add(notificationId);
+              newNotificationCount++;
+              console.log(`[Background Fetch] Showed notification ${notificationId}: ${message}`);
+            }
           }
         }
+      } catch (error) {
+        console.error(`[Background Fetch] Failed to check outlet ${outlet.outletID}:`, error);
       }
     }
 
-    console.log("[Background Fetch] Completed successfully");
-    return BackgroundFetch.BackgroundFetchResult.NewData;
+    // Save the updated shown IDs and timestamp
+    await saveShownNotificationIds(shownIds);
+    await saveLastCheckTimestamp(new Date());
+
+    console.log(`[Background Fetch] Completed successfully - ${newNotificationCount} new notification(s) shown`);
+    return newNotificationCount > 0
+      ? BackgroundFetch.BackgroundFetchResult.NewData
+      : BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (error) {
     console.error("[Background Fetch] Error:", error);
     return BackgroundFetch.BackgroundFetchResult.Failed;
