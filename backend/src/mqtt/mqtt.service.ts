@@ -83,6 +83,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         const power = typeof data.power === 'number' ? data.power : null;
         const energy = typeof data.energy === 'number' ? data.energy : null;
 
+        // Update runtime for this outlet (if it's ON)
+        await this.updateOutletRuntime(outletId);
+
         // Skip storing if any value is null or if power is 0 (outlet is OFF or incomplete data)
         // This prevents database flooding with useless or incomplete entries
         if (current === null || power === null || energy === null || power === 0) {
@@ -268,6 +271,40 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Update outlet runtime counter
+   * Called every time we receive power data (every 5 seconds)
+   * Increments runtime by 5 seconds if outlet is ON
+   */
+  private async updateOutletRuntime(outletId: number) {
+    try {
+      // Get current outlet state
+      const outlet = await this.prisma.outlet.findUnique({
+        where: { outletID: outletId },
+        select: { state: true, runtime: true }
+      });
+
+      // Only increment runtime if outlet is ON
+      if (outlet?.state === true) {
+        const currentRuntime = outlet.runtime ?? 0;
+        const newRuntime = currentRuntime + 5; // Increment by 5 seconds
+
+        await this.prisma.outlet.update({
+          where: { outletID: outletId },
+          data: { runtime: newRuntime }
+        });
+
+        // Log every minute (when runtime is divisible by 60)
+        if (newRuntime % 60 === 0) {
+          console.log(`⏱️  Outlet ${outletId} runtime: ${Math.floor(newRuntime / 60)} minutes`);
+        }
+      }
+    } catch (error) {
+      // Don't throw error, just log - runtime tracking shouldn't break data collection
+      console.error(`Failed to update runtime for outlet ${outletId}:`, error);
+    }
+  }
+
   // Method to publish messages to MQTT
   publish(topic: string, message: string): void {
     if (this.client && this.client.connected) {
@@ -285,19 +322,23 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const message = JSON.stringify({ state });
     this.publish(topic, message);
 
-    // Update database - if turning OFF, also clear timer fields to prevent UI showing stale countdown
+    // Update database - if turning OFF, also clear timer fields and reset runtime
     await this.prisma.outlet.update({
       where: { outletID: outletId },
       data: {
         state,
         // Clear timer fields when turning OFF (prevents race condition with UI showing timer on OFF outlet)
+        // Reset runtime to 0 when turning OFF (ready for next power-on session)
         ...(state === false && {
           timerIsActive: false,
           timerEndsAt: null,
           timerSource: null,
+          runtime: 0,
         }),
       },
     });
+
+    console.log(`Outlet ${outletId} turned ${state ? 'ON' : 'OFF'}${state === false ? ' - runtime reset' : ''}`);
   }
 
   // Method to start timer on STM32

@@ -354,8 +354,12 @@ export class GeofenceAutomationService {
     });
 
     if (recentNotification) {
+      const timeSince = recentNotification.createdAt
+        ? Math.round((Date.now() - recentNotification.createdAt.getTime()) / 1000)
+        : 0;
+
       this.logger.log(
-        `Skipping duplicate notification for outlet ${outletId}: "${message}" (last sent ${Math.round((Date.now() - recentNotification.createdAt.getTime()) / 1000)}s ago)`,
+        `Skipping duplicate notification for outlet ${outletId}: "${message}" (last sent ${timeSince}s ago)`,
       );
       return;
     }
