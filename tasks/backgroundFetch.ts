@@ -2,6 +2,7 @@ import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 import { api } from "@/services/api";
 import { getNotificationPreferences } from "@/utils/notificationPreferences";
 import { getShownNotificationIds, saveShownNotificationIds } from "@/utils/notificationTracking";
@@ -82,11 +83,13 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
                 content: {
                   title: "⏰ Timer Completed",
                   body: message,
-                  sound: true,
+                  sound: 'normal.wav',
+                  vibrate: false,
                   priority: Notifications.AndroidNotificationPriority.HIGH,
                   data: { outletId: outlet.outletID, notificationId },
                 },
                 trigger: null,
+                ...(Platform.OS === 'android' ? { channelId: 'app-notifications' } : {}),
               });
 
               shownIds.add(notificationId);

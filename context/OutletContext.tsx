@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
+import { Platform } from "react-native";
 import { Outlet, TimerSource } from "@/types/outlet";
 import { api } from "@/services/api";
 import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
@@ -261,9 +262,12 @@ export function OutletProvider({ children }: { children: ReactNode }) {
                 content: {
                   title: "📍 Geofence Auto-Shutdown",
                   body: bestMessage,
+                  sound: 'normal.wav',
+                  vibrate: false,
                   data: { outletId: bestOutletId, notificationId: best.notificationID },
                 },
                 trigger: null,
+                ...(Platform.OS === 'android' ? { channelId: 'geofence-alerts-v2' } : {}),
               })
                 .then(() => {
                   lastGeofenceShutdownNotificationRef.current = {
@@ -340,9 +344,12 @@ export function OutletProvider({ children }: { children: ReactNode }) {
               content: {
                 title,
                 body: notification.message ?? "",
+                sound: 'normal.wav',
+                vibrate: false,
                 data: { outletId: outlet.id, notificationId: notification.notificationID },
               },
               trigger: null, // Immediate
+              ...(Platform.OS === 'android' ? { channelId: 'app-notifications' } : {}),
             });
           }
 

@@ -67,31 +67,44 @@ Notifications.setNotificationHandler({
 // Create notification channels for Android
 async function setupNotificationChannels() {
   if (Platform.OS === 'android') {
-    // Critical channel: Left zone with outlets on (bypasses DND, uses alarm sound)
-    // Sound file must be in: android/app/src/main/res/raw/alarm.wav
-    await Notifications.setNotificationChannelAsync('critical-alerts', {
+    // Critical channel: Left zone with outlets on (bypasses DND, uses critical sound)
+    // Sound file must be in: android/app/src/main/res/raw/critical.wav
+    await Notifications.setNotificationChannelAsync('critical-alerts-v3', {
       name: 'Critical Safety Alerts',
       description: 'Urgent alerts when leaving home with outlets still on',
       importance: Notifications.AndroidImportance.MAX,
-      sound: 'alarm.wav', // Custom alarm sound (must match filename in res/raw/)
-      vibrationPattern: [0, 500, 200, 500, 200, 500], // Long urgent pattern
+      sound: 'critical.wav', // Custom critical sound (must match filename in res/raw/)
+      vibrationPattern: null, // Disable vibration to allow custom sound to play
       enableLights: true,
       lightColor: '#FF0000', // Red for urgency
-      enableVibrate: true,
+      enableVibrate: false, // Must be false for custom sound to work
       bypassDnd: true, // Bypass Do Not Disturb
       showBadge: true,
     });
 
-    // Regular channel: Other geofence alerts (respects DND, default sound)
-    await Notifications.setNotificationChannelAsync('geofence-alerts', {
+    // Regular channel: Other geofence alerts (respects DND, uses normal sound)
+    await Notifications.setNotificationChannelAsync('geofence-alerts-v2', {
       name: 'Geofence Alerts',
       description: 'Notifications for geofence activity',
       importance: Notifications.AndroidImportance.HIGH,
-      sound: null, // Use system default
-      vibrationPattern: [0, 250, 250, 250], // Standard pattern
+      sound: 'normal.wav', // Custom normal sound
+      vibrationPattern: null, // Disable vibration for custom sound to work
       enableLights: true,
       lightColor: '#0F0E41', // App color
-      enableVibrate: true,
+      enableVibrate: false, // Must be false for custom sound to work
+      showBadge: true,
+    });
+
+    // General channel: Timer completions and other app notifications
+    await Notifications.setNotificationChannelAsync('app-notifications', {
+      name: 'App Notifications',
+      description: 'Timer completions and general app notifications',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'normal.wav', // Custom normal sound
+      vibrationPattern: null, // Disable vibration for custom sound to work
+      enableLights: true,
+      lightColor: '#0F0E41', // App color
+      enableVibrate: false, // Must be false for custom sound to work
       showBadge: true,
     });
   }
@@ -210,7 +223,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
     try {
       // Determine notification channel and configuration based on reason
       const isCritical = reason === 'left_zone';
-      const channelId = isCritical ? 'critical-alerts' : 'geofence-alerts';
+      const channelId = isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v2';
       const title = isCritical ? '🚨 PowerGuard CRITICAL ALERT' : '⚠️ PowerGuard Alert';
 
       // Play loud sound for critical alerts only
@@ -224,13 +237,11 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
           title,
           body: bodyText + ' Turn off manually or wait for timer.',
           // Set sound explicitly (required for Android below 8.0 and as fallback)
-          sound: isCritical ? 'alarm.wav' : true,
+          sound: isCritical ? 'critical.wav' : 'normal.wav',
           priority: isCritical
             ? Notifications.AndroidNotificationPriority.MAX
             : Notifications.AndroidNotificationPriority.HIGH,
-          vibrate: isCritical
-            ? [0, 500, 200, 500, 200, 500] // Long urgent pattern for critical
-            : [0, 250, 250, 250], // Standard pattern for regular
+          // No vibrate parameter - allows custom sound to work on Android
           sticky: isCritical, // Only keep critical alerts visible
           data: {
             type: 'geofence_alert',

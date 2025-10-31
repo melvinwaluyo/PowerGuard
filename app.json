@@ -82,7 +82,7 @@
         {
           "icon": "./assets/icons/adaptive-icon.png",
           "color": "#0F0E41",
-          "sounds": ["./assets/sounds/alarm.wav"],
+          "sounds": ["./assets/sounds/critical.wav", "./assets/sounds/normal.wav"],
           "mode": "production"
         }
       ],

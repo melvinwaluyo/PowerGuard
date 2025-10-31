@@ -2,6 +2,7 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 import { api } from "@/services/api";
 import { getNotificationPreferences } from "@/utils/notificationPreferences";
 
@@ -100,9 +101,9 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
               content: {
                 title: "🚨 PowerGuard CRITICAL ALERT",
                 body: `⚠️ You left home with ${activeOutletCount} outlet${activeOutletCount > 1 ? 's' : ''} still ON! Auto-shutdown in ${timerText}.`,
-                sound: 'alarm.wav',
+                sound: 'critical.wav',
+                vibrate: false,
                 priority: Notifications.AndroidNotificationPriority.MAX,
-                vibrate: [0, 500, 200, 500, 200, 500],
                 sticky: true,
                 data: {
                   type: 'geofence_exit',
@@ -111,6 +112,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
               },
               trigger: null,
               identifier: `geofence-exit-${Date.now()}`,
+              ...(Platform.OS === 'android' ? { channelId: 'critical-alerts-v3' } : {}),
             });
 
             await markNotificationShown(LAST_EXIT_NOTIFICATION_KEY);
@@ -136,7 +138,8 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
           content: {
             title: "⚠️ Auto Shutdown Ready",
             body: "Geofence timer completed. Open PowerGuard to confirm shutdown.",
-            sound: true,
+            sound: 'normal.wav',
+            vibrate: false,
             priority: Notifications.AndroidNotificationPriority.HIGH,
             data: {
               requestId: evaluation.pendingRequest.requestId,
@@ -144,6 +147,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
             },
           },
           trigger: null,
+          ...(Platform.OS === 'android' ? { channelId: 'app-notifications' } : {}),
         });
       }
 
