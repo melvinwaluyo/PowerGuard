@@ -109,6 +109,7 @@ export class FcmService implements OnModuleInit {
     body: string,
     data?: Record<string, string>,
     isCritical: boolean = false,
+    customChannelId?: string,
   ): Promise<string | null> {
     if (!this.isInitialized) {
       this.logger.warn('Firebase not initialized. Skipping notification.');
@@ -116,6 +117,8 @@ export class FcmService implements OnModuleInit {
     }
 
     try {
+      const channelId = customChannelId || (isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v3');
+
       const message: admin.messaging.Message = {
         token,
         notification: {
@@ -127,18 +130,25 @@ export class FcmService implements OnModuleInit {
           isCritical: isCritical.toString(),
         },
         android: {
-          priority: isCritical ? 'high' : 'normal',
+          priority: 'high', // Always use high priority to ensure delivery when app is closed
           notification: {
-            channelId: isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v2',
+            channelId,
             sound: isCritical ? 'critical.wav' : 'normal.wav',
             priority: isCritical ? 'max' : 'high',
           },
         },
         apns: {
+          headers: {
+            'apns-priority': '10', // High priority for immediate delivery
+          },
           payload: {
             aps: {
               sound: isCritical ? 'critical.wav' : 'normal.wav',
               contentAvailable: true,
+              alert: {
+                title,
+                body,
+              },
             },
           },
         },
@@ -162,6 +172,7 @@ export class FcmService implements OnModuleInit {
     body: string,
     data?: Record<string, string>,
     isCritical: boolean = false,
+    customChannelId?: string,
   ): Promise<admin.messaging.BatchResponse | null> {
     if (!this.isInitialized) {
       this.logger.warn('Firebase not initialized. Skipping notification.');
@@ -174,6 +185,8 @@ export class FcmService implements OnModuleInit {
     }
 
     try {
+      const channelId = customChannelId || (isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v3');
+
       const message: admin.messaging.MulticastMessage = {
         tokens,
         notification: {
@@ -185,18 +198,25 @@ export class FcmService implements OnModuleInit {
           isCritical: isCritical.toString(),
         },
         android: {
-          priority: isCritical ? 'high' : 'normal',
+          priority: 'high', // Always use high priority to ensure delivery when app is closed
           notification: {
-            channelId: isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v2',
+            channelId,
             sound: isCritical ? 'critical.wav' : 'normal.wav',
             priority: isCritical ? 'max' : 'high',
           },
         },
         apns: {
+          headers: {
+            'apns-priority': '10', // High priority for immediate delivery
+          },
           payload: {
             aps: {
               sound: isCritical ? 'critical.wav' : 'normal.wav',
               contentAvailable: true,
+              alert: {
+                title,
+                body,
+              },
             },
           },
         },

@@ -167,6 +167,40 @@ export class GeofenceAutomationService {
           };
         }
 
+        // Use atomic update as a lock - only proceed if countdown is not already active
+        // This prevents race conditions when multiple location updates come in simultaneously
+        const updateResult = await this.prisma.geofenceSetting.updateMany({
+          where: {
+            settingID: settings.settingID,
+            countdownIsActive: false, // Only update if countdown is not already active
+          },
+          data: {
+            lastStatus: GeofenceZone.OUTSIDE,
+            countdownIsActive: true,
+            countdownStartedAt: new Date(),
+            countdownEndsAt: countdownEndsAtDate,
+          },
+        });
+
+        // If update count is 0, another request already activated the countdown
+        if (updateResult.count === 0) {
+          this.logger.log(
+            `Skipping geofence countdown activation for powerstrip ${powerstripID}: already active (race condition prevented)`,
+          );
+          // Return current state
+          return {
+            zone,
+            distanceMeters,
+            countdownIsActive: true,
+            countdownEndsAt: countdownEndsAtIso,
+            remainingSeconds: this.calculateRemainingSeconds(countdownEndsAtDate),
+            autoShutdownSeconds,
+            triggeredOutlets: [],
+            pendingRequest: serializedPending,
+          };
+        }
+
+        // We successfully acquired the lock, proceed with timer activation
         for (const outlet of outlets) {
           try {
             // Double-check outlet is still ON before starting timer (prevents race conditions)
@@ -195,17 +229,8 @@ export class GeofenceAutomationService {
           }
         }
 
-        await this.prisma.geofenceSetting.update({
-          where: { settingID: settings.settingID },
-          data: {
-            lastStatus: GeofenceZone.OUTSIDE,
-            countdownIsActive: true,
-            countdownStartedAt: new Date(),
-            countdownEndsAt: countdownEndsAtDate,
-          },
-        });
-
-        // Send FCM notification: User left home with outlets ON
+        // Send FCM notification based on scenario
+        // Note: This only executes once due to the atomic update lock above
         if (triggeredOutlets.length > 0) {
           const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
           if (tokens.length > 0) {
@@ -213,18 +238,46 @@ export class GeofenceAutomationService {
             const seconds = autoShutdownSeconds % 60;
             const timerText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
+            // Differentiate between leaving zone vs turning on while outside
+            const justLeftZone = previousZone !== GeofenceZone.OUTSIDE;
+            const isCritical = justLeftZone; // Critical only when user forgot and left
+
+            let title: string;
+            let message: string;
+            let notificationType: string;
+
+            if (justLeftZone) {
+              // Scenario 1: User left home with outlets ON (unintentional/forgetful)
+              title = 'PowerGuard CRITICAL ALERT';
+              message = `You left home with ${triggeredOutlets.length} outlet${triggeredOutlets.length > 1 ? 's' : ''} still ON! Auto-shutdown in ${timerText}.`;
+              notificationType = 'geofence_exit';
+            } else {
+              // Scenario 2: User turned on outlets while already outside (intentional)
+              title = 'PowerGuard Alert';
+              message = `You turned on ${triggeredOutlets.length} outlet${triggeredOutlets.length > 1 ? 's' : ''} while away from home. Auto-shutdown in ${timerText}.`;
+              notificationType = 'outlet_turned_on_outside';
+            }
+
             await this.fcmService.sendToMultipleDevices(
               tokens,
-              'PowerGuard CRITICAL ALERT',
-              `You left home with ${triggeredOutlets.length} outlet${triggeredOutlets.length > 1 ? 's' : ''} still ON! Auto-shutdown in ${timerText}.`,
+              title,
+              message,
               {
-                type: 'geofence_exit',
+                type: notificationType,
                 activeOutletCount: triggeredOutlets.length.toString(),
                 powerstripId: powerstripID.toString(),
               },
-              true, // isCritical
+              isCritical,
             );
-            this.logger.log(`[FCM] Sent geofence exit notification to ${tokens.length} device(s)`);
+            this.logger.log(`[FCM] Sent ${isCritical ? 'CRITICAL' : 'standard'} geofence notification (${notificationType}) to ${tokens.length} device(s)`);
+
+            // Log the notification for audit trail
+            await this.prisma.notificationLog.create({
+              data: {
+                outletID: triggeredOutlets[0],
+                message,
+              },
+            });
           }
         }
 

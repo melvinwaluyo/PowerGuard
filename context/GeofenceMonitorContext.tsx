@@ -83,7 +83,7 @@ async function setupNotificationChannels() {
     });
 
     // Regular channel: Other geofence alerts (respects DND, uses normal sound)
-    await Notifications.setNotificationChannelAsync('geofence-alerts-v2', {
+    await Notifications.setNotificationChannelAsync('geofence-alerts-v3', {
       name: 'Geofence Alerts',
       description: 'Notifications for geofence activity',
       importance: Notifications.AndroidImportance.HIGH,
@@ -96,7 +96,7 @@ async function setupNotificationChannels() {
     });
 
     // General channel: Timer completions and other app notifications
-    await Notifications.setNotificationChannelAsync('app-notifications', {
+    await Notifications.setNotificationChannelAsync('app-notifications-v2', {
       name: 'App Notifications',
       description: 'Timer completions and general app notifications',
       importance: Notifications.AndroidImportance.HIGH,
@@ -574,10 +574,14 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
     } else {
       void stopWatching();
     }
+    // IMPORTANT: No cleanup function here!
+    // Background geofencing should continue running even when app closes
+    // Only stop when user explicitly disables geofencing via settings
     return () => {
-      stopWatching();
+      // Only clean up the polling intervals, NOT the native geofencing task
+      clearIntervals();
     };
-  }, [startWatching, stopWatching, settings?.isEnabled, settings?.latitude, settings?.longitude, settings?.radius]);
+  }, [startWatching, stopWatching, settings?.isEnabled, settings?.latitude, settings?.longitude, settings?.radius, clearIntervals]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", async (state) => {

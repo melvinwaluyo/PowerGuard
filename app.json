@@ -110,7 +110,8 @@
         }
       ],
       "expo-audio",
-      "@react-native-firebase/app"
+      "@react-native-firebase/app",
+      "./plugins/withAndroidManifestFix"
     ],
     "experiments": {
       "typedRoutes": true,

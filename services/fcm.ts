@@ -110,9 +110,16 @@ export function setupFCMHandlers() {
 
         // Determine channel based on message data
         const isCritical = data.isCritical === 'true' || data.type === 'geofence_exit';
-        const channelId = isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v2';
 
-        console.log('[FCM] Scheduling notification:', { title, body, channelId, isCritical });
+        // Determine channel: timer completions use app-notifications, others use geofence/critical
+        let channelId: string;
+        if (data.type === 'timer_completed') {
+          channelId = 'app-notifications-v2';
+        } else {
+          channelId = isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v3';
+        }
+
+        console.log('[FCM] Scheduling notification:', { title, body, channelId, isCritical, type: data.type });
 
         const notificationId = await Notifications.scheduleNotificationAsync({
           content: {

@@ -250,6 +250,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
                 source: 'manual',
               },
               false, // Not critical
+              'app-notifications-v2', // Use app notifications channel
             );
             console.log(`[FCM] Sent manual timer completion notification to ${tokens.length} device(s)`);
           }
@@ -261,11 +262,10 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleGeofenceTimerCompletion(outletId: number, currentOutlet: any) {
-    // Check if this is the last active geofence timer for this powerstrip
     const powerstripID = currentOutlet.powerstripID;
     if (!powerstripID) return;
 
-    // Count remaining active geofence timers for this powerstrip
+    // Check if there are any remaining active geofence timers for this powerstrip
     const remainingGeofenceTimers = await this.prisma.outlet.count({
       where: {
         powerstripID,
@@ -275,9 +275,14 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    // If this was the last geofence timer, create consolidated notification
+    // Log total geofence timers (including the one that just completed)
+    const totalGeofenceTimersBefore = remainingGeofenceTimers + 1;
+    console.log(`[Geofence Timer] Outlet ${outletId} completed. Total geofence timers that were active: ${totalGeofenceTimersBefore}, Remaining: ${remainingGeofenceTimers}`);
+
+    // Only send notification when this is the LAST geofence timer to complete
     if (remainingGeofenceTimers === 0) {
-      // Get all outlets that were just turned off by geofence
+      // Get all outlets that were recently turned off by geofence timers
+      // Use a generous time window (3 minutes) to capture all outlets
       const recentlyTurnedOffOutlets = await this.prisma.outlet.findMany({
         where: {
           powerstripID,
@@ -287,7 +292,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
               status: 'COMPLETED',
               source: 'GEOFENCE',
               triggeredAt: {
-                gte: new Date(Date.now() - 60000) // Within last minute
+                gte: new Date(Date.now() - 180000) // Within last 3 minutes
               }
             }
           }
@@ -299,13 +304,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         }
       });
 
+      console.log(`[Geofence Timer] Found ${recentlyTurnedOffOutlets.length} outlets that were turned off by geofence:`,
+        recentlyTurnedOffOutlets.map(o => `${o.outletID} (${o.name || 'Outlet ' + o.index})`));
+
       if (recentlyTurnedOffOutlets.length > 0) {
         const outletNames = recentlyTurnedOffOutlets
           .map(o => o.name || `Outlet ${o.index || o.outletID}`)
           .join(', ');
 
-        const message = `Geofence auto-shutdown: ${recentlyTurnedOffOutlets.length} outlet(s) turned off (${outletNames})`;
+        const message = `Geofence auto-shutdown: Turned off ${recentlyTurnedOffOutlets.length} outlet${recentlyTurnedOffOutlets.length > 1 ? 's' : ''} (${outletNames})`;
 
+        // Create notification log
         await this.prisma.notificationLog.create({
           data: {
             outletID: recentlyTurnedOffOutlets[0].outletID,
@@ -313,7 +322,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           }
         });
 
-        // Send FCM notification for geofence timer completion
+        // Send FCM notification
         const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
         if (tokens.length > 0) {
           await this.fcmService.sendToMultipleDevices(
@@ -326,12 +335,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
               powerstripId: powerstripID.toString(),
             },
             false, // Not critical
+            'app-notifications-v2', // Use same channel as manual timers
           );
-          console.log(`[FCM] Sent geofence timer completion notification to ${tokens.length} device(s)`);
+          console.log(`[FCM] Sent geofence timer completion notification for ${recentlyTurnedOffOutlets.length} outlet(s) to ${tokens.length} device(s)`);
         }
 
         console.log(`✅ Geofence consolidated notification created for ${recentlyTurnedOffOutlets.length} outlets`);
       }
+    } else {
+      console.log(`⏳ Waiting for ${remainingGeofenceTimers} more geofence timer(s) to complete before sending notification`);
     }
   }
 
