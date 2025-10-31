@@ -7,11 +7,39 @@ import { GeofenceMonitorProvider } from "@/context/GeofenceMonitorContext";
 import * as Updates from "expo-updates";
 import { useEffect } from "react";
 import { Alert, Platform } from "react-native";
+import { registerBackgroundFetch } from "@/tasks/backgroundFetch";
+import { isGeofencingActive } from "@/tasks/backgroundGeofencing";
+import { initializeFCM } from "@/services/fcm";
 import "../global.css";
 
 export default function RootLayout() {
   useEffect(() => {
-    async function checkForUpdates() {
+    async function initializeApp() {
+      // Initialize FCM (Firebase Cloud Messaging)
+      try {
+        await initializeFCM();
+        console.log("[App] FCM initialized successfully");
+      } catch (error) {
+        console.warn("[App] FCM initialization failed:", error);
+      }
+
+      // Register background fetch task (only works in standalone builds, not Expo Go)
+      try {
+        await registerBackgroundFetch();
+        console.log("[App] Background fetch registered successfully");
+      } catch (error) {
+        console.warn("[App] Background fetch not available (requires standalone build):", error);
+      }
+
+      // Check geofencing status (only works in standalone builds, not Expo Go)
+      try {
+        const isRunning = await isGeofencingActive();
+        console.log("[App] Native geofencing running:", isRunning);
+      } catch (error) {
+        console.warn("[App] Geofencing not available (requires standalone build):", error);
+      }
+
+      // Check for updates
       if (__DEV__) {
         // Skip update checks in development mode
         return;
@@ -31,7 +59,7 @@ export default function RootLayout() {
       }
     }
 
-    checkForUpdates();
+    initializeApp();
   }, []);
 
   return (

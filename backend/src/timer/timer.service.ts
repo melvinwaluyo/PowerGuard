@@ -97,8 +97,31 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
   private async completeExpiredTimer(outletId: number) {
     this.logger.log(`Completing expired timer for outlet ${outletId} (fallback)`);
 
+    // Get outlet info to check timer source
+    const outlet = await this.prisma.outlet.findUnique({
+      where: { outletID: outletId },
+      select: {
+        outletID: true,
+        timerSource: true,
+        timerDuration: true,
+        powerstripID: true,
+      },
+    });
+
+    if (!outlet) {
+      this.logger.warn(`Outlet ${outletId} not found when completing expired timer`);
+      return;
+    }
+
+    // Stop the timer in the database (marks it as inactive, logs completion)
+    await this.stopTimer(outletId, {
+      status: TimerLogStatus.COMPLETED,
+      note: 'Timer completed automatically (fallback)',
+      logWhenInactive: false,
+    });
+
     // Turn off the outlet
-    await this.mqttService.controlOutlet(outletId, false);
+    await this.safeTurnOffOutlet(outletId, outlet.timerSource, outlet.powerstripID);
 
     this.logger.log(`Fallback timer completed for outlet ${outletId}`);
   }

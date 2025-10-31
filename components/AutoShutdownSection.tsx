@@ -1,16 +1,20 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Alert } from "react-native";
-import { useEffect, useState } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
 import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { TimerDurationValue } from "@/types/timer";
+import { Ionicons } from "@expo/vector-icons";
+import { useEffect, useState } from "react";
+import { Alert, Text, TouchableOpacity, View } from "react-native";
+import { saveLastTimerSeconds } from "@/utils/timerStorage";
 
 interface AutoShutdownSectionProps {
   autoShutdownTime: number; // in seconds
   countdownIsActive: boolean;
   countdownRemainingSeconds: number;
   geofenceZone: "INSIDE" | "OUTSIDE";
-  pendingRequest?: { requestId: number; initiatedAt: string; expiresAt: string | null } | null;
+  pendingRequest?: {
+    requestId: number;
+    initiatedAt: string;
+    expiresAt: string | null;
+  } | null;
   hasActiveOutlets: boolean;
   onShutdownTimeChange: (timeInSeconds: number) => Promise<void> | void;
   isSaving?: boolean;
@@ -46,16 +50,20 @@ export default function AutoShutdownSection({
   );
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Update timer when prop changes
+  // Update timer when prop changes (but not while editing to prevent flickering)
   useEffect(() => {
-    setCurrentTimer(secondsToTimer(autoShutdownTime));
-  }, [autoShutdownTime]);
+    if (!modalVisible && !isSaving) {
+      setCurrentTimer(secondsToTimer(autoShutdownTime));
+    }
+  }, [autoShutdownTime, modalVisible, isSaving]);
 
   const handleConfirm = async (value: TimerDurationValue) => {
     setCurrentTimer(value);
     const seconds = timerToSeconds(value);
     try {
       await onShutdownTimeChange(seconds);
+      // Save to persistent storage for future use
+      await saveLastTimerSeconds(seconds);
       setModalVisible(false);
     } catch (error) {
       // revert to previous value on failure
@@ -116,17 +124,28 @@ export default function AutoShutdownSection({
                 </View>
                 <View>
                   <Text className="text-xs text-[#991B1B] mb-1">
-                    Countdown Berjalan
+                    Countdown is Running
                   </Text>
                   <Text className="text-[32px] font-bold text-[#991B1B] tracking-wider">
-                    {String(secondsToTimer(countdownRemainingSeconds).hours).padStart(2, "0")}:
-                    {String(secondsToTimer(countdownRemainingSeconds).minutes).padStart(2, "0")}:
-                    {String(secondsToTimer(countdownRemainingSeconds).seconds).padStart(2, "0")}
+                    {String(
+                      secondsToTimer(countdownRemainingSeconds).hours
+                    ).padStart(2, "0")}
+                    :
+                    {String(
+                      secondsToTimer(countdownRemainingSeconds).minutes
+                    ).padStart(2, "0")}
+                    :
+                    {String(
+                      secondsToTimer(countdownRemainingSeconds).seconds
+                    ).padStart(2, "0")}
                   </Text>
                 </View>
               </View>
               <Text className="mt-3 text-sm text-[#7F1D1D]">
-                Current zone: {geofenceZone === "OUTSIDE" ? "Outside radius" : "Inside radius"}
+                Current zone:{" "}
+                {geofenceZone === "OUTSIDE"
+                  ? "Outside radius"
+                  : "Inside radius"}
               </Text>
               {pendingRequest ? (
                 <Text className="mt-2 text-sm text-[#7F1D1D] font-semibold">
@@ -149,7 +168,10 @@ export default function AutoShutdownSection({
                 </View>
               </View>
               <Text className="mt-3 text-sm text-[#4B5563]">
-                Current zone: {geofenceZone === "OUTSIDE" ? "Outside radius" : "Inside radius"}
+                Current zone:{" "}
+                {geofenceZone === "OUTSIDE"
+                  ? "Outside radius"
+                  : "Inside radius"}
               </Text>
               {pendingRequest ? (
                 <Text className="mt-2 text-sm text-[#4B5563] font-semibold">
@@ -158,11 +180,19 @@ export default function AutoShutdownSection({
               ) : geofenceZone === "OUTSIDE" && !hasActiveOutlets ? (
                 <View className="mt-3 bg-[#FEF3C7] rounded-lg p-3">
                   <View className="flex-row items-center">
-                    <Ionicons name="information-circle" size={16} color="#B45309" style={{ marginRight: 6 }} />
-                    <Text className="text-xs text-[#92400E] font-semibold">Timer inactive</Text>
+                    <Ionicons
+                      name="information-circle"
+                      size={16}
+                      color="#B45309"
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text className="text-xs text-[#92400E] font-semibold">
+                      Timer inactive
+                    </Text>
                   </View>
                   <Text className="text-xs text-[#92400E] mt-1">
-                    All outlets are OFF. Timer will start automatically when any outlet turns ON.
+                    All outlets are OFF. Timer will start automatically when any
+                    outlet turns ON.
                   </Text>
                 </View>
               ) : null}

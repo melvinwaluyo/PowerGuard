@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Platform, StatusBar, Text, TouchableOpacity, View } from "react-native";
+import { Platform, StatusBar, Text, TouchableOpacity, View, InteractionManager } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -109,10 +109,25 @@ export default function PinLocationScreen() {
 
   const handleMyLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      // Check existing permissions first to avoid unnecessary requests
+      const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
+
+      let finalStatus = existingStatus;
+
+      // Only request permissions if not already granted
+      if (existingStatus !== 'granted') {
+        // Wait a moment to ensure we're in foreground if user clicks button immediately
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+        finalStatus = newStatus;
+      }
+
+      if (finalStatus !== 'granted') {
         if (Platform.OS === 'web') {
           alert('Location permission denied. Please enable location access in your browser settings.');
+        } else {
+          console.warn('Location permission not granted');
         }
         return;
       }
@@ -143,12 +158,24 @@ export default function PinLocationScreen() {
 
   // Auto-fetch current location on mount ONLY if no location was provided in params
   useEffect(() => {
-    if (!hasInitialLocation) {
-      handleMyLocation();
-    } else if (hasInitialLocation && !selectedLocation.address) {
-      // If we have initial coordinates but no address, fetch it
-      handleLocationChange(selectedLocation.latitude, selectedLocation.longitude);
-    }
+    // Use InteractionManager to wait for screen transition to complete
+    // This prevents "Background activity launch blocked" on Android development builds
+    const task = InteractionManager.runAfterInteractions(() => {
+      // Add additional delay for development builds
+      // Development builds need extra time for the activity to be fully visible
+      setTimeout(() => {
+        if (!hasInitialLocation) {
+          handleMyLocation();
+        } else if (hasInitialLocation && !selectedLocation.address) {
+          // If we have initial coordinates but no address, fetch it
+          handleLocationChange(selectedLocation.latitude, selectedLocation.longitude);
+        }
+      }, 500); // 500ms additional delay after interactions complete
+    });
+
+    return () => {
+      task.cancel();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

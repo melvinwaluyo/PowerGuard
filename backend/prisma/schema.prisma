@@ -136,3 +136,17 @@ model AutoShutdownRequest {
   @@index([powerstripID])
   @@index([status])
 }
+
+model FcmToken {
+  id           Int      @id @default(autoincrement())
+  deviceId     String   @unique @map("deviceid")
+  fcmToken     String   @map("fcmtoken")
+  platform     String
+  powerstripID Int?     @map("powerstripid")
+  createdAt    DateTime @default(now()) @map("createdat") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updatedat") @db.Timestamptz(6)
+
+  @@map("fcmtoken")
+  @@index([deviceId])
+  @@index([powerstripID])
+}

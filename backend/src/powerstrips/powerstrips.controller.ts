@@ -49,6 +49,7 @@ export class PowerstripsController {
   @Get(':id/usage/hourly')
   @ApiOperation({ summary: 'Get hourly usage for the last 24 hours (for Day tab)' })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
+  @ApiQuery({ name: 'all', type: 'boolean', required: false, description: 'Fetch all historical data instead of just last 24 hours' })
   @ApiResponse({
     status: 200,
     description: 'Returns hourly aggregated energy usage',
@@ -64,8 +65,11 @@ export class PowerstripsController {
       },
     },
   })
-  getHourlyUsage(@Param('id', ParseIntPipe) id: number) {
-    return this.outletsService.getHourlyUsage(id);
+  getHourlyUsage(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('all') all?: boolean,
+  ) {
+    return this.outletsService.getHourlyUsage(id, all === true);
   }
 
   @Get(':id/usage/daily')
@@ -73,6 +77,7 @@ export class PowerstripsController {
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
   @ApiQuery({ name: 'year', type: 'number', required: false, description: 'Year (defaults to current year)' })
   @ApiQuery({ name: 'month', type: 'number', required: false, description: 'Month 1-12 (defaults to current month)' })
+  @ApiQuery({ name: 'all', type: 'boolean', required: false, description: 'Fetch all historical data instead of specific month' })
   @ApiResponse({
     status: 200,
     description: 'Returns daily aggregated energy usage for the specified month',
@@ -92,7 +97,11 @@ export class PowerstripsController {
     @Param('id', ParseIntPipe) id: number,
     @Query('year') year?: number,
     @Query('month') month?: number,
+    @Query('all') all?: boolean,
   ) {
+    if (all === true) {
+      return this.outletsService.getDailyUsage(id, null, null);
+    }
     const now = new Date();
     const targetYear = year ?? now.getFullYear();
     const targetMonth = month ?? now.getMonth() + 1; // 1-12
@@ -103,6 +112,7 @@ export class PowerstripsController {
   @ApiOperation({ summary: 'Get monthly usage for a specific year (for Year tab)' })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
   @ApiQuery({ name: 'year', type: 'number', required: false, description: 'Year (defaults to current year)' })
+  @ApiQuery({ name: 'all', type: 'boolean', required: false, description: 'Fetch all historical data instead of specific year' })
   @ApiResponse({
     status: 200,
     description: 'Returns monthly aggregated energy usage for the specified year',
@@ -121,7 +131,11 @@ export class PowerstripsController {
   getMonthlyUsage(
     @Param('id', ParseIntPipe) id: number,
     @Query('year') year?: number,
+    @Query('all') all?: boolean,
   ) {
+    if (all === true) {
+      return this.outletsService.getMonthlyUsage(id, null);
+    }
     const targetYear = year ?? new Date().getFullYear();
     return this.outletsService.getMonthlyUsage(id, targetYear);
   }

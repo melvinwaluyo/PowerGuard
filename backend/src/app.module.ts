@@ -8,6 +8,7 @@ import { OutletsModule } from './outlets/outlets.module';
 import { PowerstripsModule } from './powerstrips/powerstrips.module';
 import { GeofenceModule } from './geofence/geofence.module';
 import { TimerModule } from './timer/timer.module';
+import { FcmModule } from './fcm/fcm.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { TimerModule } from './timer/timer.module';
     PowerstripsModule,
     GeofenceModule,
     TimerModule,
+    FcmModule,
   ],
   controllers: [AppController],
   providers: [AppService],

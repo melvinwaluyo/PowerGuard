@@ -260,11 +260,11 @@ const PowerUsageChart: React.FC = () => {
       const currentYear = now.getUTCFullYear();
       const currentMonth = now.getUTCMonth() + 1; // 1-12
 
-      // Fetch all data in parallel
+      // Fetch all data in parallel - use all=true to get complete history
       const [hourly, daily, monthly, today, past30] = await Promise.all([
-        api.getHourlyUsage(DEFAULT_POWERSTRIP_ID),
-        api.getDailyUsage(DEFAULT_POWERSTRIP_ID, currentYear, currentMonth),
-        api.getMonthlyUsage(DEFAULT_POWERSTRIP_ID, currentYear),
+        api.getHourlyUsage(DEFAULT_POWERSTRIP_ID, undefined, true),
+        api.getDailyUsage(DEFAULT_POWERSTRIP_ID, undefined, undefined, true),
+        api.getMonthlyUsage(DEFAULT_POWERSTRIP_ID, undefined, true),
         api.getTodayUsage(DEFAULT_POWERSTRIP_ID),
         api.getPast30DaysUsage(DEFAULT_POWERSTRIP_ID),
       ]);
@@ -399,9 +399,8 @@ const PowerUsageChart: React.FC = () => {
       setTodayTotal(typeof today === 'number' ? today : 0);
       setPast30DaysTotal(past30.reduce((sum: number, item: any) => sum + (item.total_energy_kwh || 0), 0));
 
-      // Default to last page (most recent)
-      const lastPageIndex = Math.max(0, dayPagesArray.length - 1);
-      setCurrentPageIndex(lastPageIndex);
+      // Don't set currentPageIndex here - let the useEffect handle it
+      // based on the current period to avoid conflicts
     } catch (error) {
       console.error('Error fetching usage data:', error);
       // Set empty data on error
@@ -480,20 +479,30 @@ const PowerUsageChart: React.FC = () => {
   const data = currentPage?.data || [];
   const maxValue = React.useMemo(() => calculateMaxValue(data), [data]);
 
-  // Reset to last page when period changes
+  // Reset to last page when period changes or data refreshes
   useEffect(() => {
     const lastIndex = Math.max(0, pages.length - 1);
     setCurrentPageIndex(lastIndex);
 
-    // Scroll to last page
-    setTimeout(() => {
-      if (pages.length > 0) {
-        flatListRef.current?.scrollToIndex({
-          index: lastIndex,
-          animated: false
-        });
+    // Scroll to last page with retry logic to handle timing issues
+    const scrollToLast = () => {
+      if (pages.length > 0 && flatListRef.current) {
+        try {
+          flatListRef.current.scrollToIndex({
+            index: lastIndex,
+            animated: false
+          });
+        } catch (error) {
+          // If scrollToIndex fails (e.g., item not rendered yet), retry
+          setTimeout(scrollToLast, 50);
+        }
       }
-    }, 100);
+    };
+
+    // Use requestAnimationFrame for better timing with React rendering
+    requestAnimationFrame(() => {
+      setTimeout(scrollToLast, 100);
+    });
   }, [period, pages.length]);
 
   // Handle scroll to update current page
