@@ -103,6 +103,20 @@ export class OutletsController {
     return this.outletsService.updateName(id, name);
   }
 
+  @Get(':id/notifications')
+  @ApiOperation({ summary: 'Get recent notifications for an outlet' })
+  @ApiParam({ name: 'id', type: 'number', description: 'Outlet ID' })
+  @ApiQuery({ name: 'limit', type: 'number', required: false, description: 'Number of notifications to return (default: 10)' })
+  @ApiQuery({ name: 'since', type: 'string', required: false, description: 'ISO timestamp - only return notifications after this time' })
+  @ApiResponse({ status: 200, description: 'Returns notification logs for the outlet' })
+  getNotifications(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('limit', ParseIntPipe) limit: number = 10,
+    @Query('since') since?: string,
+  ) {
+    return this.outletsService.getNotifications(id, limit, since);
+  }
+
   @Delete('usage-logs/clear')
   @ApiOperation({
     summary: 'Clear all usage log data (Development/Testing only)',

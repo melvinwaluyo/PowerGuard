@@ -1,0 +1,21 @@
+{
+  "name": "powerguard-mqtt-simulator",
+  "version": "1.0.0",
+  "description": "MQTT Simulator for PowerGuard - Simulates STM32 device sending power data",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "mqtt",
+    "simulator",
+    "powerguard"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "mqtt": "^5.14.1",
+    "dotenv": "^16.4.7"
+  }
+}

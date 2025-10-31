@@ -4,6 +4,7 @@ import { ReportHeader } from "@/components/ReportHeader";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState, useEffect, useRef } from "react";
 import { Platform, ScrollView, Text, TouchableOpacity, View, ActivityIndicator, Alert, Animated, FlatList, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
+import { useFocusEffect } from "expo-router";
 import {
   Bar,
   BarChart,
@@ -208,6 +209,15 @@ const PowerUsageChart: React.FC = () => {
   const { outlets } = useOutlets();
   const flatListRef = useRef<FlatList>(null);
   const [containerWidth, setContainerWidth] = useState(600); // Default max width
+  const [chartKey, setChartKey] = useState(0); // Key to force chart remount
+
+  // Reset chart when navigating back to this screen
+  useFocusEffect(
+    React.useCallback(() => {
+      // Force chart to remount and clear tooltip when screen gains focus
+      setChartKey(prev => prev + 1);
+    }, [])
+  );
 
   // Animation for refresh button
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
@@ -250,11 +260,11 @@ const PowerUsageChart: React.FC = () => {
       const currentYear = now.getUTCFullYear();
       const currentMonth = now.getUTCMonth() + 1; // 1-12
 
-      // Fetch all data in parallel
+      // Fetch all data in parallel - use all=true to get complete history
       const [hourly, daily, monthly, today, past30] = await Promise.all([
-        api.getHourlyUsage(DEFAULT_POWERSTRIP_ID),
-        api.getDailyUsage(DEFAULT_POWERSTRIP_ID, currentYear, currentMonth),
-        api.getMonthlyUsage(DEFAULT_POWERSTRIP_ID, currentYear),
+        api.getHourlyUsage(DEFAULT_POWERSTRIP_ID, undefined, true),
+        api.getDailyUsage(DEFAULT_POWERSTRIP_ID, undefined, undefined, true),
+        api.getMonthlyUsage(DEFAULT_POWERSTRIP_ID, undefined, true),
         api.getTodayUsage(DEFAULT_POWERSTRIP_ID),
         api.getPast30DaysUsage(DEFAULT_POWERSTRIP_ID),
       ]);
@@ -389,9 +399,8 @@ const PowerUsageChart: React.FC = () => {
       setTodayTotal(typeof today === 'number' ? today : 0);
       setPast30DaysTotal(past30.reduce((sum: number, item: any) => sum + (item.total_energy_kwh || 0), 0));
 
-      // Default to last page (most recent)
-      const lastPageIndex = Math.max(0, dayPagesArray.length - 1);
-      setCurrentPageIndex(lastPageIndex);
+      // Don't set currentPageIndex here - let the useEffect handle it
+      // based on the current period to avoid conflicts
     } catch (error) {
       console.error('Error fetching usage data:', error);
       // Set empty data on error
@@ -449,7 +458,6 @@ const PowerUsageChart: React.FC = () => {
       const currentDateString = `${now.getUTCFullYear()}-${now.getUTCMonth()}-${now.getUTCDate()}`;
 
       if (lastCheckedDateRef.current && lastCheckedDateRef.current !== currentDateString) {
-        console.log('Day changed, refreshing data...');
         fetchData();
       }
 
@@ -471,20 +479,30 @@ const PowerUsageChart: React.FC = () => {
   const data = currentPage?.data || [];
   const maxValue = React.useMemo(() => calculateMaxValue(data), [data]);
 
-  // Reset to last page when period changes
+  // Reset to last page when period changes or data refreshes
   useEffect(() => {
     const lastIndex = Math.max(0, pages.length - 1);
     setCurrentPageIndex(lastIndex);
 
-    // Scroll to last page
-    setTimeout(() => {
-      if (pages.length > 0) {
-        flatListRef.current?.scrollToIndex({
-          index: lastIndex,
-          animated: false
-        });
+    // Scroll to last page with retry logic to handle timing issues
+    const scrollToLast = () => {
+      if (pages.length > 0 && flatListRef.current) {
+        try {
+          flatListRef.current.scrollToIndex({
+            index: lastIndex,
+            animated: false
+          });
+        } catch (error) {
+          // If scrollToIndex fails (e.g., item not rendered yet), retry
+          setTimeout(scrollToLast, 50);
+        }
       }
-    }, 100);
+    };
+
+    // Use requestAnimationFrame for better timing with React rendering
+    requestAnimationFrame(() => {
+      setTimeout(scrollToLast, 100);
+    });
   }, [period, pages.length]);
 
   // Handle scroll to update current page
@@ -511,7 +529,7 @@ const PowerUsageChart: React.FC = () => {
           onPress: async () => {
             try {
               await api.clearAllUsageData();
-              Alert.alert("Success", "All usage data has been cleared. MQTT simulator will generate new data.");
+              Alert.alert("Success", "All usage data has been cleared successfully.");
             } catch (error) {
               Alert.alert("Error", "Failed to clear usage data. Please try again.");
               console.error("Error clearing data:", error);
@@ -656,7 +674,7 @@ const PowerUsageChart: React.FC = () => {
                 offset: containerWidth * index,
                 index,
               })}
-              renderItem={({ item: page }) => {
+              renderItem={({ item: page, index }) => {
                 const pageData = page.data;
                 const pageMaxValue = calculateMaxValue(pageData);
 
@@ -715,7 +733,12 @@ const PowerUsageChart: React.FC = () => {
                         </ResponsiveContainer>
                       </View>
                     ) : (
-                      <MobileBarChart data={pageData} maxValue={pageMaxValue} unit="kWh" />
+                      <MobileBarChart
+                        key={`${period}-${index}-${currentPageIndex}-${chartKey}`}
+                        data={pageData}
+                        maxValue={pageMaxValue}
+                        unit="kWh"
+                      />
                     )}
                   </View>
                 );

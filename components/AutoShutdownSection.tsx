@@ -1,16 +1,21 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Alert } from "react-native";
-import { useEffect, useState } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
 import { TimerPickerModal } from "@/components/TimerPickerModal";
 import { TimerDurationValue } from "@/types/timer";
+import { Ionicons } from "@expo/vector-icons";
+import { useEffect, useState } from "react";
+import { Alert, Text, TouchableOpacity, View } from "react-native";
+import { saveLastTimerSeconds } from "@/utils/timerStorage";
 
 interface AutoShutdownSectionProps {
   autoShutdownTime: number; // in seconds
   countdownIsActive: boolean;
   countdownRemainingSeconds: number;
   geofenceZone: "INSIDE" | "OUTSIDE";
-  pendingRequest?: { requestId: number; initiatedAt: string; expiresAt: string | null } | null;
+  pendingRequest?: {
+    requestId: number;
+    initiatedAt: string;
+    expiresAt: string | null;
+  } | null;
+  hasActiveOutlets: boolean;
   onShutdownTimeChange: (timeInSeconds: number) => Promise<void> | void;
   isSaving?: boolean;
 }
@@ -21,6 +26,7 @@ export default function AutoShutdownSection({
   countdownRemainingSeconds,
   geofenceZone,
   pendingRequest,
+  hasActiveOutlets,
   onShutdownTimeChange,
   isSaving = false,
 }: AutoShutdownSectionProps) {
@@ -44,21 +50,25 @@ export default function AutoShutdownSection({
   );
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Update timer when prop changes
+  // Update timer when prop changes (but not while editing to prevent flickering)
   useEffect(() => {
-    setCurrentTimer(secondsToTimer(autoShutdownTime));
-  }, [autoShutdownTime]);
+    if (!modalVisible && !isSaving) {
+      setCurrentTimer(secondsToTimer(autoShutdownTime));
+    }
+  }, [autoShutdownTime, modalVisible, isSaving]);
 
   const handleConfirm = async (value: TimerDurationValue) => {
     setCurrentTimer(value);
     const seconds = timerToSeconds(value);
     try {
       await onShutdownTimeChange(seconds);
+      // Save to persistent storage for future use
+      await saveLastTimerSeconds(seconds);
       setModalVisible(false);
     } catch (error) {
       // revert to previous value on failure
       setCurrentTimer(secondsToTimer(autoShutdownTime));
-      Alert.alert("Geofence", "Gagal memperbarui durasi auto shutdown.");
+      Alert.alert("Geofence", "Failed to update auto-shutdown duration.");
     }
   };
 
@@ -96,12 +106,12 @@ export default function AutoShutdownSection({
               className="text-[11px] font-semibold"
               style={{ color: countdownIsActive ? "#B45309" : "#1E3A8A" }}
             >
-              {countdownIsActive ? "Countdown aktif" : "Standby"}
+              {countdownIsActive ? "Countdown active" : "Standby"}
             </Text>
           </View>
         </View>
         <Text className="text-sm text-[#6B7280] mb-5">
-          Timer berjalan otomatis saat Anda meninggalkan radius geofence
+          Timer runs automatically when you leave geofence radius
         </Text>
 
         <View className="items-center">
@@ -114,21 +124,32 @@ export default function AutoShutdownSection({
                 </View>
                 <View>
                   <Text className="text-xs text-[#991B1B] mb-1">
-                    Countdown Berjalan
+                    Countdown is Running
                   </Text>
                   <Text className="text-[32px] font-bold text-[#991B1B] tracking-wider">
-                    {String(secondsToTimer(countdownRemainingSeconds).hours).padStart(2, "0")}:
-                    {String(secondsToTimer(countdownRemainingSeconds).minutes).padStart(2, "0")}:
-                    {String(secondsToTimer(countdownRemainingSeconds).seconds).padStart(2, "0")}
+                    {String(
+                      secondsToTimer(countdownRemainingSeconds).hours
+                    ).padStart(2, "0")}
+                    :
+                    {String(
+                      secondsToTimer(countdownRemainingSeconds).minutes
+                    ).padStart(2, "0")}
+                    :
+                    {String(
+                      secondsToTimer(countdownRemainingSeconds).seconds
+                    ).padStart(2, "0")}
                   </Text>
                 </View>
               </View>
               <Text className="mt-3 text-sm text-[#7F1D1D]">
-                Zona saat ini: {geofenceZone === "OUTSIDE" ? "Di luar radius" : "Di dalam radius"}
+                Current zone:{" "}
+                {geofenceZone === "OUTSIDE"
+                  ? "Outside radius"
+                  : "Inside radius"}
               </Text>
               {pendingRequest ? (
                 <Text className="mt-2 text-sm text-[#7F1D1D] font-semibold">
-                  Menunggu keputusan Anda sebelum mematikan outlet.
+                  Waiting for your decision before turning off outlets.
                 </Text>
               ) : null}
             </View>
@@ -139,7 +160,6 @@ export default function AutoShutdownSection({
                   <Ionicons name="timer-outline" size={24} color="#fff" />
                 </View>
                 <View>
-                  <Text className="text-xs text-[#6B7280] mb-1">Durasi Default</Text>
                   <Text className="text-[32px] font-bold text-[#0F0E41] tracking-wider">
                     {String(currentTimer.hours).padStart(2, "0")}:
                     {String(currentTimer.minutes).padStart(2, "0")}:
@@ -148,12 +168,33 @@ export default function AutoShutdownSection({
                 </View>
               </View>
               <Text className="mt-3 text-sm text-[#4B5563]">
-                Zona saat ini: {geofenceZone === "OUTSIDE" ? "Di luar radius" : "Di dalam radius"}
+                Current zone:{" "}
+                {geofenceZone === "OUTSIDE"
+                  ? "Outside radius"
+                  : "Inside radius"}
               </Text>
               {pendingRequest ? (
                 <Text className="mt-2 text-sm text-[#4B5563] font-semibold">
-                  Menunggu respon: outlet tidak dimatikan otomatis.
+                  Waiting for response: outlets will not turn off automatically.
                 </Text>
+              ) : geofenceZone === "OUTSIDE" && !hasActiveOutlets ? (
+                <View className="mt-3 bg-[#FEF3C7] rounded-lg p-3">
+                  <View className="flex-row items-center">
+                    <Ionicons
+                      name="information-circle"
+                      size={16}
+                      color="#B45309"
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text className="text-xs text-[#92400E] font-semibold">
+                      Timer inactive
+                    </Text>
+                  </View>
+                  <Text className="text-xs text-[#92400E] mt-1">
+                    All outlets are OFF. Timer will start automatically when any
+                    outlet turns ON.
+                  </Text>
+                </View>
               ) : null}
             </View>
           )}

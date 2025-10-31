@@ -1,6 +1,6 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -16,6 +16,8 @@ import {
   TimerSource,
 } from "@/types/outlet";
 import { TimerDurationValue } from "@/types/timer";
+import { useGeofenceMonitor } from "@/context/GeofenceMonitorContext";
+import { getLastTimerSeconds, saveLastTimerSeconds } from "@/utils/timerStorage";
 
 const LOG_CATEGORY_META: Record<
   OutletLogCategory,
@@ -53,28 +55,28 @@ const formatSecondsAsClock = (seconds: number): string => {
 
 const TIMER_STATUS_COPY: Record<TimerLogStatus, { action: string; detail: (log: any) => string }> = {
   STARTED: {
-    action: "Timer dimulai",
-    detail: (log) => `Durasi ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
+    action: "Timer started",
+    detail: (log) => `Duration ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
   },
   STOPPED: {
-    action: "Timer dihentikan",
-    detail: (log) => `Sisa ${formatSecondsAsClock(log.remainingSeconds ?? 0)}`,
+    action: "Timer stopped",
+    detail: (log) => `Remaining ${formatSecondsAsClock(log.remainingSeconds ?? 0)}`,
   },
   COMPLETED: {
-    action: "Timer selesai",
-    detail: () => "Relay dimatikan otomatis",
+    action: "Timer completed",
+    detail: () => "Relay turned off automatically",
   },
   AUTO_CANCELLED: {
-    action: "Timer dibatalkan otomatis",
-    detail: () => "Terjadi kendala saat mematikan relay",
+    action: "Timer auto-cancelled",
+    detail: () => "Issue occurred while turning off relay",
   },
   POWER_OFF: {
-    action: "Power dimatikan",
-    detail: () => "Timer dihentikan karena outlet dimatikan",
+    action: "Power turned off",
+    detail: () => "Timer stopped because outlet was turned off",
   },
   REPLACED: {
-    action: "Timer diganti",
-    detail: (log) => `Durasi baru ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
+    action: "Timer replaced",
+    detail: (log) => `New duration ${formatSecondsAsClock(log.durationSeconds ?? 0)}`,
   },
 };
 
@@ -115,8 +117,9 @@ export default function OutletDetailsScreen() {
   const outletIdParam = Array.isArray(id) ? id[0] : id;
   const outletId = useMemo(() => Number(outletIdParam), [outletIdParam]);
 
-  const { getOutletById, toggleOutlet, updateOutlet, renameOutlet, refreshOutlets } = useOutlets();
+  const { getOutletById, toggleOutlet, updateOutlet, renameOutlet, refreshOutlets, togglingOutlets } = useOutlets();
   const outlet = Number.isFinite(outletId) ? getOutletById(outletId) : undefined;
+  const { status: geofenceStatus } = useGeofenceMonitor();
 
   const [activeTab, setActiveTab] = useState<DetailTab>("status");
   const [renameModalVisible, setRenameModalVisible] = useState(false);
@@ -132,12 +135,50 @@ export default function OutletDetailsScreen() {
   });
   const [timerLogs, setTimerLogs] = useState<OutletLogEntry[]>([]);
   const [isTimerActionLoading, setTimerActionLoading] = useState(false);
+  const isUpdatingTimerPresetRef = useRef(false);
+
+  // Load last timer value on mount
+  useEffect(() => {
+    let mounted = true;
+    const loadLastTimer = async () => {
+      const lastTimer = await getLastTimerSeconds();
+      console.log(`[Timer] Loaded last timer value from storage: ${lastTimer}s (${Math.floor(lastTimer/60)} minutes)`);
+
+      // Only set if component is still mounted and outlet doesn't have a timer preset
+      if (mounted && !outlet?.timerPresetSeconds) {
+        console.log(`[Timer] Outlet has no preset, using loaded value: ${lastTimer}s`);
+        setTimerPresetSeconds(lastTimer);
+        if (!outlet?.timer?.isActive) {
+          setCountdownSeconds(lastTimer);
+        }
+      } else if (mounted) {
+        console.log(`[Timer] Outlet already has preset: ${outlet.timerPresetSeconds}s, keeping it`);
+      }
+    };
+    void loadLastTimer();
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // Run once on mount
 
   useEffect(() => {
     if (!outlet) return;
+
+    // Skip updates while we're actively changing the timer preset to prevent flickering
+    if (isUpdatingTimerPresetRef.current) {
+      return;
+    }
+
     setTimerState(outlet.timer);
-    setTimerPresetSeconds(outlet.timerPresetSeconds ?? DEFAULT_TIMER_SECONDS);
-  }, [outlet?.timer, outlet?.timerPresetSeconds, outlet]);
+    const newPreset = outlet.timerPresetSeconds ?? DEFAULT_TIMER_SECONDS;
+    setTimerPresetSeconds(prev => {
+      if (prev !== newPreset) {
+        console.log(`[Timer] Timer preset changed: ${prev}s → ${newPreset}s`);
+      }
+      return newPreset;
+    });
+  }, [outlet?.timer, outlet?.timerPresetSeconds]);
 
   const applyTimerStatus = useCallback(
     (status: TimerStatusResponse) => {
@@ -205,7 +246,18 @@ export default function OutletDetailsScreen() {
     return () => clearInterval(interval);
   }, [outletId, loadTimerLogs]);
 
+  const isGeofenceTimerActive =
+    Boolean(timerState?.isActive) &&
+    timerState?.source === "GEOFENCE" &&
+    geofenceStatus.countdownIsActive &&
+    Boolean(geofenceStatus.countdownEndsAt);
+
   useEffect(() => {
+    if (isGeofenceTimerActive) {
+      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
+      return;
+    }
+
     if (!timerState) {
       setCountdownSeconds(timerPresetSeconds);
       return;
@@ -238,7 +290,13 @@ export default function OutletDetailsScreen() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timerState, timerPresetSeconds, refreshTimerStatus, loadTimerLogs]);
+  }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds, timerState, timerPresetSeconds, refreshTimerStatus, loadTimerLogs]);
+
+  useEffect(() => {
+    if (isGeofenceTimerActive) {
+      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
+    }
+  }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds]);
 
   const handleTimerDurationChange = useCallback(
     async (nextSeconds: number) => {
@@ -247,6 +305,9 @@ export default function OutletDetailsScreen() {
       const safeSeconds = Math.max(1, nextSeconds);
       const previousPreset = timerPresetSeconds;
       const previousState = timerState;
+
+      // Mark that we're updating to prevent flickering
+      isUpdatingTimerPresetRef.current = true;
 
       const optimisticState: OutletTimerState =
         timerState && timerState.isActive
@@ -274,6 +335,8 @@ export default function OutletDetailsScreen() {
         applyTimerStatus(status);
         await loadTimerLogs();
         await refreshOutlets();
+        // Save to persistent storage for future use
+        await saveLastTimerSeconds(safeSeconds);
       } catch (error) {
         console.error("Failed to update timer preset:", error);
         setTimerState(previousState ?? null);
@@ -286,6 +349,11 @@ export default function OutletDetailsScreen() {
           timerPresetSeconds: previousPreset,
         });
         throw error;
+      } finally {
+        // Allow updates again after a short delay to ensure backend has updated
+        setTimeout(() => {
+          isUpdatingTimerPresetRef.current = false;
+        }, 500);
       }
     },
     [
@@ -303,11 +371,12 @@ export default function OutletDetailsScreen() {
   const handleStartTimer = useCallback(async () => {
     if (!outlet || !Number.isFinite(outletId)) return;
     if (!outlet.isOn) {
-      Alert.alert("Timer", "Nyalakan outlet terlebih dahulu sebelum memulai timer.");
+      Alert.alert("Timer", "Turn on outlet first before starting timer.");
       return;
     }
 
     const duration = Math.max(1, timerPresetSeconds);
+    console.log(`[Timer] Starting timer for outlet ${outlet.id} (${outlet.name}) with duration ${duration}s (${Math.floor(duration/60)} minutes)`);
 
     try {
       setTimerActionLoading(true);
@@ -315,9 +384,12 @@ export default function OutletDetailsScreen() {
       applyTimerStatus(status);
       await loadTimerLogs();
       await refreshOutlets();
+
+      // Note: Timer completion notifications are handled by the backend
+      // and shown via OutletContext polling - no need to schedule local notifications
     } catch (error) {
-      console.error("Failed to start timer:", error);
-      Alert.alert("Timer", "Gagal memulai timer. Silakan coba lagi.");
+      console.error("[Timer] Failed to start timer:", error);
+      Alert.alert("Timer", "Failed to start timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
@@ -334,7 +406,7 @@ export default function OutletDetailsScreen() {
       await refreshOutlets();
     } catch (error) {
       console.error("Failed to stop timer:", error);
-      Alert.alert("Timer", "Gagal menghentikan timer. Silakan coba lagi.");
+      Alert.alert("Timer", "Failed to stop timer. Please try again.");
     } finally {
       setTimerActionLoading(false);
     }
@@ -394,14 +466,14 @@ export default function OutletDetailsScreen() {
 
   const isTimerEnabled = outlet.isOn;
   const timerStatusText = !isTimerEnabled
-    ? "Nyalakan outlet untuk menggunakan timer"
+    ? "Turn on outlet to use timer"
     : timerState?.isActive
       ? timerState.source === "GEOFENCE"
-        ? "Timer geofence berjalan"
-        : "Timer berjalan"
+        ? "Geofence timer running"
+        : "Timer running"
       : timerState?.source === "GEOFENCE"
-        ? "Timer geofence siap"
-        : `Durasi ${formatSecondsAsClock(timerPresetSeconds)}`;
+        ? "Geofence timer ready"
+        : `Duration ${formatSecondsAsClock(timerPresetSeconds)}`;
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "status", label: "Status" },
@@ -483,6 +555,7 @@ export default function OutletDetailsScreen() {
             onStartTimer={handleStartTimer}
             onStopTimer={handleStopTimer}
             isTimerActionLoading={isTimerActionLoading}
+            isToggling={togglingOutlets?.has(outlet.id)}
           />
         ) : (
           <LogSection logs={timerLogs} />
@@ -551,6 +624,7 @@ function StatusSection({
   onStopTimer,
   isTimerEnabled,
   isTimerActionLoading,
+  isToggling,
 }: {
   outlet: Outlet;
   onTogglePower: () => Promise<void> | void;
@@ -563,14 +637,18 @@ function StatusSection({
   onStopTimer: () => void | Promise<void>;
   isTimerEnabled: boolean;
   isTimerActionLoading: boolean;
+  isToggling?: boolean;
 }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [draftTimer, setDraftTimer] = useState<TimerDurationValue>(secondsToDuration(timerPresetSeconds));
   const [isSavingPreset, setSavingPreset] = useState(false);
 
   useEffect(() => {
-    setDraftTimer(secondsToDuration(timerPresetSeconds));
-  }, [timerPresetSeconds]);
+    // Only update draft when modal is not visible to prevent flickering while editing
+    if (!modalVisible && !isSavingPreset) {
+      setDraftTimer(secondsToDuration(timerPresetSeconds));
+    }
+  }, [timerPresetSeconds, modalVisible, isSavingPreset]);
 
   const handleEditTimer = () => {
     setDraftTimer(secondsToDuration(timerPresetSeconds));
@@ -584,7 +662,7 @@ function StatusSection({
       await onTimerDurationChange(seconds);
       setModalVisible(false);
     } catch (error) {
-      Alert.alert("Timer", "Gagal memperbarui durasi timer. Silakan coba lagi.");
+      Alert.alert("Timer", "Failed to update timer duration. Please try again.");
     } finally {
       setSavingPreset(false);
     }
@@ -651,9 +729,11 @@ function StatusSection({
             onValueChange={() => {
               void onTogglePower();
             }}
+            disabled={isToggling}
             thumbColor="#FFFFFF"
             trackColor={{ false: "#CBD2E9", true: "#0F0E41" }}
             ios_backgroundColor="#CBD2E9"
+            style={{ opacity: isToggling ? 0.5 : 1 }}
           />
         </View>
       </View>

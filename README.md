@@ -26,8 +26,8 @@ A cross-platform mobile application built with Expo and React Native that enable
 - **Language**: TypeScript
 - **Database**: PostgreSQL (Azure)
 - **ORM**: Prisma
-- **MQTT**: HiveMQ Cloud
-- **Protocol**: MQTT over TLS
+- **MQTT**: Public EMQX
+- **Protocol**: MQTT
 
 ## Project Structure
 

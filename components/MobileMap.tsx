@@ -110,9 +110,18 @@ export function MobileMap({ location: propLocation, onLocationChange, radius }: 
     try {
       setIsLoadingLocation(true);
 
-      // Request permission
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      // Check existing permissions first to avoid unnecessary requests
+      const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
+
+      let finalStatus = existingStatus;
+
+      // Only request permission if not already granted
+      if (existingStatus !== 'granted') {
+        const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+        finalStatus = newStatus;
+      }
+
+      if (finalStatus !== 'granted') {
         const message = Platform.OS === 'web'
           ? 'Please enable location permissions in your browser settings. Make sure you\'re accessing via localhost.'
           : 'Please enable location permissions to use this feature.';

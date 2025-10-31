@@ -41,12 +41,12 @@ model Outlet {
 
 model UsageLog {
   usageID   Int       @id @default(autoincrement()) @map("usageid")
-  outletID  Int?      @map("outletid")
-  current   Float?    @db.Real
-  power     Float?    @db.Real
-  energy    Float?    @db.Real
-  createdAt DateTime? @default(now()) @map("createdat") @db.Timestamptz(6)
-  outlet    Outlet?   @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
+  outletID  Int       @map("outletid")
+  current   Float     @db.Real
+  power     Float     @db.Real
+  energy    Float     @db.Real
+  createdAt DateTime  @default(now()) @map("createdat") @db.Timestamptz(6)
+  outlet    Outlet    @relation(fields: [outletID], references: [outletID], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("usagelog")
 }

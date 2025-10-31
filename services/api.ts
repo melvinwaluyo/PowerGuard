@@ -1,39 +1,8 @@
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
-
 // PowerGuard API Service
-// Automatically detects the backend server IP address
-// - Web: localhost
-// - Android Emulator: 10.0.2.2 (special alias to host machine)
-// - iOS/Physical Devices: Auto-detects from Expo dev server
+// API URL from environment variables
+// Set EXPO_PUBLIC_API_URL in .env file for local development
 
-const getApiBaseUrl = () => {
-  // For web, use localhost
-  if (Platform.OS === 'web') {
-    return 'http://localhost:3000';
-  }
-
-  // For Android emulator, use the special alias to reach host machine
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:3000';
-  }
-
-  // For iOS and physical devices, auto-detect IP from Expo
-  // This gets the IP address of your development machine automatically
-  const expoDebuggerHost = Constants.expoConfig?.hostUri;
-
-  if (expoDebuggerHost) {
-    // Extract just the IP address (remove port if present)
-    const host = expoDebuggerHost.split(':')[0];
-    return `http://${host}:3000`;
-  }
-
-  // Fallback to localhost if auto-detection fails
-  console.warn('Could not auto-detect backend IP, falling back to localhost');
-  return 'http://localhost:3000';
-};
-
-const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000';
 
 export interface GeofenceSetting {
   settingID?: number;
@@ -90,7 +59,6 @@ class ApiService {
 
   constructor() {
     this.baseUrl = API_BASE_URL;
-    console.log('API Base URL:', this.baseUrl); // Debug log
   }
 
   // Geofence Settings
@@ -389,10 +357,14 @@ class ApiService {
   }
 
   // Usage Aggregation APIs for Reporting Charts
-  async getHourlyUsage(powerstripId: number, date?: string) {
+  async getHourlyUsage(powerstripId: number, date?: string, all: boolean = false) {
     try {
-      const params = date ? `?date=${date}` : '';
-      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/hourly${params}`);
+      const params = new URLSearchParams();
+      if (date) params.append('date', date);
+      if (all) params.append('all', 'true');
+
+      const queryString = params.toString() ? `?${params}` : '';
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/hourly${queryString}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -417,11 +389,15 @@ class ApiService {
     }
   }
 
-  async getDailyUsage(powerstripId: number, year?: number, month?: number) {
+  async getDailyUsage(powerstripId: number, year?: number, month?: number, all: boolean = false) {
     try {
       const params = new URLSearchParams();
-      if (year) params.append('year', year.toString());
-      if (month) params.append('month', month.toString());
+      if (all) {
+        params.append('all', 'true');
+      } else {
+        if (year) params.append('year', year.toString());
+        if (month) params.append('month', month.toString());
+      }
 
       const url = `${this.baseUrl}/powerstrips/${powerstripId}/usage/daily${params.toString() ? `?${params}` : ''}`;
       const response = await fetch(url);
@@ -435,10 +411,17 @@ class ApiService {
     }
   }
 
-  async getMonthlyUsage(powerstripId: number, year?: number) {
+  async getMonthlyUsage(powerstripId: number, year?: number, all: boolean = false) {
     try {
-      const params = year ? `?year=${year}` : '';
-      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/monthly${params}`);
+      const params = new URLSearchParams();
+      if (all) {
+        params.append('all', 'true');
+      } else if (year) {
+        params.append('year', year.toString());
+      }
+
+      const queryString = params.toString() ? `?${params}` : '';
+      const response = await fetch(`${this.baseUrl}/powerstrips/${powerstripId}/usage/monthly${queryString}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -471,6 +454,24 @@ class ApiService {
       return await response.json();
     } catch (error) {
       console.error('Error fetching today usage:', error);
+      throw error;
+    }
+  }
+
+  // Notifications
+  async getOutletNotifications(outletId: number, limit: number = 10, since?: string) {
+    try {
+      const params = new URLSearchParams();
+      params.append('limit', limit.toString());
+      if (since) params.append('since', since);
+
+      const response = await fetch(`${this.baseUrl}/outlets/${outletId}/notifications?${params}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
       throw error;
     }
   }

@@ -127,17 +127,53 @@ export class GeofenceAutomationService {
           },
         });
 
+        // If no outlets are ON, don't start the countdown
+        if (outlets.length === 0) {
+          await this.prisma.geofenceSetting.update({
+            where: { settingID: settings.settingID },
+            data: {
+              lastStatus: GeofenceZone.OUTSIDE,
+              countdownIsActive: false,
+              countdownStartedAt: null,
+              countdownEndsAt: null,
+            },
+          });
+
+          return {
+            zone,
+            distanceMeters,
+            countdownIsActive: false,
+            countdownEndsAt: null,
+            autoShutdownSeconds,
+            triggeredOutlets,
+            pendingRequest: serializedPending,
+          };
+        }
+
         for (const outlet of outlets) {
           try {
+            // Double-check outlet is still ON before starting timer (prevents race conditions)
+            const currentState = await this.prisma.outlet.findUnique({
+              where: { outletID: outlet.outletID },
+              select: { state: true }
+            });
+
+            if (!currentState?.state) {
+              this.logger.warn(
+                `Skipping geofence timer for outlet ${outlet.outletID}: outlet is OFF`
+              );
+              continue;
+            }
+
             await this.timerService.startTimer(outlet.outletID, autoShutdownSeconds, {
               source: TimerSource.GEOFENCE,
-              note: 'Timer geofence dimulai (keluar radius)',
+              note: 'Geofence timer started (left radius)',
               allowReplace: outlet.timerSource === TimerSource.GEOFENCE,
             });
             triggeredOutlets.push(outlet.outletID);
           } catch (error) {
             this.logger.warn(
-              `Gagal memulai timer geofence untuk outlet ${outlet.outletID}: ${(error as Error).message}`,
+              `Failed to start geofence timer for outlet ${outlet.outletID}: ${(error as Error).message}`,
             );
           }
         }
@@ -164,6 +200,40 @@ export class GeofenceAutomationService {
       }
 
       // Already outside with active countdown
+      // Check if there are still any outlets ON with geofence timer
+      const activeOutlets = await this.prisma.outlet.findMany({
+        where: {
+          powerstripID,
+          state: true,
+          timerIsActive: true,
+          timerSource: TimerSource.GEOFENCE,
+        },
+        select: { outletID: true },
+      });
+
+      // If no outlets are ON anymore, stop the countdown
+      if (activeOutlets.length === 0) {
+        await this.prisma.geofenceSetting.update({
+          where: { settingID: settings.settingID },
+          data: {
+            lastStatus: GeofenceZone.OUTSIDE,
+            countdownIsActive: false,
+            countdownStartedAt: null,
+            countdownEndsAt: null,
+          },
+        });
+
+        return {
+          zone,
+          distanceMeters,
+          countdownIsActive: false,
+          countdownEndsAt: null,
+          autoShutdownSeconds,
+          triggeredOutlets,
+          pendingRequest: serializedPending,
+        };
+      }
+
       if (previousZone !== GeofenceZone.OUTSIDE) {
         await this.prisma.geofenceSetting.update({
           where: { settingID: settings.settingID },
@@ -196,13 +266,13 @@ export class GeofenceAutomationService {
         try {
           await this.timerService.stopTimer(outlet.outletID, {
             status: TimerLogStatus.AUTO_CANCELLED,
-            note: 'Timer geofence dibatalkan (kembali ke radius aman)',
+            note: 'Geofence timer cancelled (returned to safe radius)',
             expectedSource: TimerSource.GEOFENCE,
             logWhenInactive: false,
           });
         } catch (error) {
           this.logger.warn(
-            `Gagal menghentikan timer geofence untuk outlet ${outlet.outletID}: ${(error as Error).message}`,
+            `Failed to stop geofence timer for outlet ${outlet.outletID}: ${(error as Error).message}`,
           );
         }
       }
@@ -220,7 +290,7 @@ export class GeofenceAutomationService {
       if (outlets.length) {
         await this.createNotification(
           outlets[0].outletID,
-          'Auto shutdown dibatalkan: Anda kembali ke lokasi aman.',
+          'Auto-shutdown cancelled: You returned to safe location.',
         );
       }
     } else if (previousZone !== GeofenceZone.INSIDE) {
@@ -268,11 +338,39 @@ export class GeofenceAutomationService {
   }
 
   private async createNotification(outletId: number, message: string) {
+    // Check for duplicate notifications in the last 30 seconds
+    const thirtySecondsAgo = new Date(Date.now() - 30000);
+    const recentNotification = await this.prisma.notificationLog.findFirst({
+      where: {
+        outletID: outletId,
+        message,
+        createdAt: {
+          gte: thirtySecondsAgo,
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    if (recentNotification) {
+      const timeSince = recentNotification.createdAt
+        ? Math.round((Date.now() - recentNotification.createdAt.getTime()) / 1000)
+        : 0;
+
+      this.logger.log(
+        `Skipping duplicate notification for outlet ${outletId}: "${message}" (last sent ${timeSince}s ago)`,
+      );
+      return;
+    }
+
     await this.prisma.notificationLog.create({
       data: {
         outletID: outletId,
         message,
       },
     });
+
+    this.logger.log(`Created notification for outlet ${outletId}: "${message}"`);
   }
 }

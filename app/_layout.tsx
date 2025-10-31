@@ -7,11 +7,30 @@ import { GeofenceMonitorProvider } from "@/context/GeofenceMonitorContext";
 import * as Updates from "expo-updates";
 import { useEffect } from "react";
 import { Alert, Platform } from "react-native";
+import { registerBackgroundFetch } from "@/tasks/backgroundFetch";
+import { isGeofencingActive } from "@/tasks/backgroundGeofencing";
 import "../global.css";
 
 export default function RootLayout() {
   useEffect(() => {
-    async function checkForUpdates() {
+    async function initializeApp() {
+      // Register background fetch task (only works in standalone builds, not Expo Go)
+      try {
+        await registerBackgroundFetch();
+        console.log("[App] Background fetch registered successfully");
+      } catch (error) {
+        console.warn("[App] Background fetch not available (requires standalone build):", error);
+      }
+
+      // Check geofencing status (only works in standalone builds, not Expo Go)
+      try {
+        const isRunning = await isGeofencingActive();
+        console.log("[App] Native geofencing running:", isRunning);
+      } catch (error) {
+        console.warn("[App] Geofencing not available (requires standalone build):", error);
+      }
+
+      // Check for updates
       if (__DEV__) {
         // Skip update checks in development mode
         return;
@@ -21,20 +40,17 @@ export default function RootLayout() {
         const update = await Updates.checkForUpdateAsync();
 
         if (update.isAvailable) {
-          console.log("Update available, downloading...");
           await Updates.fetchUpdateAsync();
 
           // Reload the app to apply the update
           await Updates.reloadAsync();
-        } else {
-          console.log("App is up to date");
         }
       } catch (error) {
         console.error("Error checking for updates:", error);
       }
     }
 
-    checkForUpdates();
+    initializeApp();
   }, []);
 
   return (

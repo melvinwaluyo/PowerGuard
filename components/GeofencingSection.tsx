@@ -7,6 +7,7 @@ interface GeofencingSectionProps {
   onToggle: (enabled: boolean) => void;
   radius: number;
   onRadiusChange: (radius: number) => void;
+  isSaving?: boolean;
 }
 
 export default function GeofencingSection({
@@ -14,6 +15,7 @@ export default function GeofencingSection({
   onToggle,
   radius,
   onRadiusChange,
+  isSaving = false,
 }: GeofencingSectionProps) {
   const [draftRadius, setDraftRadius] = useState(radius);
   const [isEditing, setIsEditing] = useState(false);
@@ -62,10 +64,11 @@ export default function GeofencingSection({
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => onToggle(!enabled)}
+          disabled={isSaving}
           className={`rounded-full p-0.5 ${
             enabled ? "bg-[#0F0E41]" : "bg-[#CBD2E9]"
           }`}
-          style={{ width: 52, height: 28 }}
+          style={{ width: 52, height: 28, opacity: isSaving ? 0.5 : 1 }}
         >
           <View
             className="rounded-full bg-white"

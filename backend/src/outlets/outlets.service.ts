@@ -6,6 +6,9 @@ export class OutletsService {
   constructor(private prisma: PrismaService) {}
 
   async findAll() {
+    // Only return usage data from the last 30 seconds (real-time data only)
+    const thirtySecondsAgo = new Date(Date.now() - 30000);
+
     return this.prisma.outlet.findMany({
       orderBy: [
         { index: 'asc' },
@@ -14,6 +17,11 @@ export class OutletsService {
       include: {
         powerStrip: true,
         usageLogs: {
+          where: {
+            createdAt: {
+              gte: thirtySecondsAgo,
+            },
+          },
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
@@ -22,11 +30,19 @@ export class OutletsService {
   }
 
   async findOne(id: number) {
+    // Only return usage data from the last 30 seconds (real-time data only)
+    const thirtySecondsAgo = new Date(Date.now() - 30000);
+
     return this.prisma.outlet.findUnique({
       where: { outletID: id },
       include: {
         powerStrip: true,
         usageLogs: {
+          where: {
+            createdAt: {
+              gte: thirtySecondsAgo,
+            },
+          },
           orderBy: { createdAt: 'desc' },
           take: 10,
         },
@@ -69,7 +85,26 @@ export class OutletsService {
    * Get hourly usage for the last 24 hours
    * Used for Day tab in reporting
    */
-  async getHourlyUsage(powerstripID: number) {
+  async getHourlyUsage(powerstripID: number, all: boolean = false) {
+    if (all) {
+      // Return all historical hourly data
+      const result = await this.prisma.$queryRaw<
+        Array<{ hour: Date; total_energy_kwh: number; avg_power_w: number }>
+      >`
+        SELECT
+          DATE_TRUNC('hour', "createdat") as hour,
+          COALESCE(SUM(energy), 0) as total_energy_kwh,
+          COALESCE(AVG(power), 0) as avg_power_w
+        FROM usagelog ul
+        JOIN outlet o ON ul.outletid = o.outletid
+        WHERE o.powerstripid = ${powerstripID}
+        GROUP BY DATE_TRUNC('hour', "createdat")
+        ORDER BY hour ASC
+      `;
+      return result;
+    }
+
+    // Default: last 24 hours only
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const result = await this.prisma.$queryRaw<
@@ -94,7 +129,26 @@ export class OutletsService {
    * Get daily usage for a specific month
    * Used for Month tab in reporting
    */
-  async getDailyUsage(powerstripID: number, year: number, month: number) {
+  async getDailyUsage(powerstripID: number, year: number | null, month: number | null) {
+    if (year === null || month === null) {
+      // Return all historical daily data
+      const result = await this.prisma.$queryRaw<
+        Array<{ day: Date; total_energy_kwh: number; avg_power_w: number }>
+      >`
+        SELECT
+          DATE_TRUNC('day', "createdat") as day,
+          COALESCE(SUM(energy), 0) as total_energy_kwh,
+          COALESCE(AVG(power), 0) as avg_power_w
+        FROM usagelog ul
+        JOIN outlet o ON ul.outletid = o.outletid
+        WHERE o.powerstripid = ${powerstripID}
+        GROUP BY DATE_TRUNC('day', "createdat")
+        ORDER BY day ASC
+      `;
+      return result;
+    }
+
+    // Default: specific month
     const result = await this.prisma.$queryRaw<
       Array<{ day: Date; total_energy_kwh: number; avg_power_w: number }>
     >`
@@ -118,7 +172,26 @@ export class OutletsService {
    * Get monthly usage for a specific year
    * Used for Year tab in reporting
    */
-  async getMonthlyUsage(powerstripID: number, year: number) {
+  async getMonthlyUsage(powerstripID: number, year: number | null) {
+    if (year === null) {
+      // Return all historical monthly data
+      const result = await this.prisma.$queryRaw<
+        Array<{ month: Date; total_energy_kwh: number; avg_power_w: number }>
+      >`
+        SELECT
+          DATE_TRUNC('month', "createdat") as month,
+          COALESCE(SUM(energy), 0) as total_energy_kwh,
+          COALESCE(AVG(power), 0) as avg_power_w
+        FROM usagelog ul
+        JOIN outlet o ON ul.outletid = o.outletid
+        WHERE o.powerstripid = ${powerstripID}
+        GROUP BY DATE_TRUNC('month', "createdat")
+        ORDER BY month ASC
+      `;
+      return result;
+    }
+
+    // Default: specific year
     const result = await this.prisma.$queryRaw<
       Array<{ month: Date; total_energy_kwh: number; avg_power_w: number }>
     >`
@@ -181,6 +254,23 @@ export class OutletsService {
     `;
 
     return result[0]?.total_energy_kwh || 0;
+  }
+
+  async getNotifications(outletId: number, limit: number = 10, since?: string) {
+    const whereClause: any = { outletID: outletId };
+
+    if (since) {
+      const sinceDate = new Date(since);
+      if (!isNaN(sinceDate.getTime())) {
+        whereClause.createdAt = { gt: sinceDate };
+      }
+    }
+
+    return this.prisma.notificationLog.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
   }
 
   /**

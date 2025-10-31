@@ -3,8 +3,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnModuleDestroy,
   OnModuleInit,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import { TimerLogStatus, TimerSource } from '@prisma/client';
 import { MqttService } from '../mqtt/mqtt.service';
@@ -36,19 +36,106 @@ interface StopTimerOptions {
 @Injectable()
 export class TimerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TimerService.name);
-  private readonly scheduledTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private fallbackCheckInterval: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly mqttService: MqttService,
   ) {}
 
-  async onModuleInit() {
-    await this.restoreTimers();
+  onModuleInit() {
+    // Start fallback timer check (runs every 5 seconds)
+    // This ensures timers complete even if STM32/simulator doesn't report back
+    this.fallbackCheckInterval = setInterval(() => {
+      void this.checkExpiredTimers();
+    }, 5000);
+    this.logger.log('Fallback timer check started (every 5 seconds)');
   }
 
   onModuleDestroy() {
-    this.clearAllTimers();
+    if (this.fallbackCheckInterval) {
+      clearInterval(this.fallbackCheckInterval);
+      this.logger.log('Fallback timer check stopped');
+    }
+  }
+
+  private async checkExpiredTimers() {
+    try {
+      const now = new Date();
+      const expiredTimers = await this.prisma.outlet.findMany({
+        where: {
+          timerIsActive: true,
+          timerEndsAt: {
+            lte: now, // Timer end time has passed
+          },
+        },
+        select: {
+          outletID: true,
+          timerEndsAt: true,
+          timerSource: true,
+          timerDuration: true,
+          name: true,
+          index: true,
+        },
+      });
+
+      if (expiredTimers.length > 0) {
+        this.logger.warn(
+          `Found ${expiredTimers.length} expired timer(s) - completing them (STM32 fallback)`,
+        );
+
+        for (const outlet of expiredTimers) {
+          // Simulate timer completion as if STM32 reported it
+          await this.completeExpiredTimer(outlet.outletID);
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error checking expired timers:', error);
+    }
+  }
+
+  private async completeExpiredTimer(outletId: number) {
+    this.logger.log(`Completing expired timer for outlet ${outletId} (fallback)`);
+
+    // Get outlet info to check timer source
+    const outlet = await this.prisma.outlet.findUnique({
+      where: { outletID: outletId },
+      select: {
+        outletID: true,
+        timerSource: true,
+        timerDuration: true,
+        powerstripID: true,
+      },
+    });
+
+    if (!outlet) {
+      this.logger.warn(`Outlet ${outletId} not found when completing expired timer`);
+      return;
+    }
+
+    // Stop the timer in the database (marks it as inactive, logs completion)
+    await this.stopTimer(outletId, {
+      status: TimerLogStatus.COMPLETED,
+      note: 'Timer completed automatically (fallback)',
+      logWhenInactive: false,
+    });
+
+    // Turn off the outlet
+    await this.safeTurnOffOutlet(outletId, outlet.timerSource, outlet.powerstripID);
+
+    this.logger.log(`Fallback timer completed for outlet ${outletId}`);
+  }
+
+  private async shouldStartGeofenceTimer(powerstripID: number): Promise<boolean> {
+    // Check if there are active outlets on this powerstrip
+    const activeOutlets = await this.prisma.outlet.count({
+      where: {
+        powerstripID: powerstripID,
+        state: true, // only count outlets that are on
+      },
+    });
+
+    return activeOutlets > 0; // return true if at least 1 outlet is on
   }
 
   async startTimer(
@@ -70,6 +157,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
         timerEndsAt: true,
         timerDuration: true,
         timerSource: true,
+        powerstripID: true,
       },
     });
 
@@ -78,31 +166,42 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!outlet.state) {
-      throw new BadRequestException('Timer hanya dapat diaktifkan saat outlet dalam keadaan ON');
+      throw new BadRequestException('Timer can only be activated when outlet is ON');
     }
 
     if (outlet.timerIsActive) {
       if (outlet.timerSource === source || options.allowReplace) {
         await this.stopTimer(outletId, {
           status: TimerLogStatus.REPLACED,
-          note: 'Timer diganti dengan durasi baru',
+          note: 'Timer replaced with new duration',
           logWhenInactive: false,
           expectedSource: outlet.timerSource ?? undefined,
         });
       } else if (options.force) {
         await this.stopTimer(outletId, {
           status: TimerLogStatus.REPLACED,
-          note: 'Timer diganti (force)',
+          note: 'Timer replaced (forced)',
           logWhenInactive: false,
         });
       } else {
         throw new BadRequestException(
-          'Timer sudah aktif dengan sumber berbeda. Batalkan terlebih dahulu sebelum memulai yang baru.',
+          'Timer already active with different source. Cancel it first before starting a new one.',
         );
       }
     }
 
     const endsAt = new Date(Date.now() + durationSeconds * 1000);
+
+    // Tambahkan cek khusus untuk timer geofencing
+    if (options.source === TimerSource.GEOFENCE && outlet.powerstripID) {
+      const shouldStart = await this.shouldStartGeofenceTimer(outlet.powerstripID);
+      if (!shouldStart) {
+        this.logger.log(
+          `Geofence timer not started for outlet ${outletId} because no outlets are active`,
+        );
+        return this.buildStatus(outletId, false, durationSeconds, null, null);
+      }
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.outlet.update({
@@ -111,7 +210,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
           timerIsActive: true,
           timerDuration: durationSeconds,
           timerEndsAt: endsAt,
-           timerSource: source,
+          timerSource: source,
         },
       });
 
@@ -121,13 +220,15 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
           status: TimerLogStatus.STARTED,
           durationSeconds,
           remainingSeconds: durationSeconds,
-          note: options.note ?? 'Timer dimulai',
+          note: options.note ?? 'Timer started',
           source,
         },
       });
     });
 
-    this.scheduleTimer(outletId, endsAt);
+    // Send timer start command to STM32 via MQTT
+    this.mqttService.publishTimerStart(outletId, durationSeconds, source);
+
     this.logger.log(
       `Timer started for outlet ${outletId} (${durationSeconds}s) via ${source}`,
     );
@@ -160,14 +261,14 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
 
     if (!outlet.timerIsActive) {
       if (logWhenInactive) {
-        this.logger.warn(`StopTimer dipanggil, namun tidak ada timer aktif untuk outlet ${outletId}`);
+        this.logger.warn(`StopTimer called, but no active timer for outlet ${outletId}`);
       }
       return this.buildStatus(outletId, false, null, null, null);
     }
 
     if (expectedSource && outlet.timerSource && outlet.timerSource !== expectedSource) {
       this.logger.warn(
-        `StopTimer untuk outlet ${outletId} diabaikan karena sumber saat ini ${outlet.timerSource}, bukan ${expectedSource}`,
+        `StopTimer for outlet ${outletId} ignored because current source is ${outlet.timerSource}, not ${expectedSource}`,
       );
       return this.buildStatus(
         outletId,
@@ -182,7 +283,8 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
       ? Math.max(0, Math.round((outlet.timerEndsAt.getTime() - Date.now()) / 1000))
       : 0;
 
-    this.clearScheduledTimer(outletId);
+    // Send timer stop command to STM32 via MQTT
+    this.mqttService.publishTimerStop(outletId, status);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.outlet.update({
@@ -208,7 +310,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.logger.log(
-      `Timer dihentikan untuk outlet ${outletId} dengan status ${status} (source: ${outlet.timerSource ?? 'unknown'})`,
+      `Timer stopped for outlet ${outletId} with status ${status} (source: ${outlet.timerSource ?? 'unknown'})`,
     );
     return this.buildStatus(outletId, false, outlet.timerDuration ?? null, null, null);
   }
@@ -248,7 +350,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
 
   async updateTimerPreset(outletId: number, durationSeconds: number): Promise<TimerStatus> {
     if (durationSeconds <= 0) {
-      throw new BadRequestException('Durasi timer harus lebih dari nol detik');
+      throw new BadRequestException('Timer duration must be greater than zero seconds');
     }
 
     const outlet = await this.prisma.outlet.findUnique({
@@ -261,11 +363,11 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!outlet) {
-      throw new NotFoundException(`Outlet ${outletId} tidak ditemukan`);
+      throw new NotFoundException(`Outlet ${outletId} not found`);
     }
 
     if (outlet.timerIsActive) {
-      throw new BadRequestException('Tidak dapat mengubah durasi ketika timer sedang berjalan');
+      throw new BadRequestException('Cannot change duration while timer is running');
     }
 
     const hasChanged = outlet.timerDuration !== durationSeconds;
@@ -288,14 +390,14 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
             status: TimerLogStatus.REPLACED,
             durationSeconds,
             remainingSeconds: durationSeconds,
-            note: 'Preset timer diperbarui',
+            note: 'Timer preset updated',
             source: null,
           },
         });
       }
     });
 
-    this.logger.log(`Timer preset di-outlet ${outletId} diperbarui menjadi ${durationSeconds}s`);
+    this.logger.log(`Timer preset for outlet ${outletId} updated to ${durationSeconds}s`);
     return this.buildStatus(outletId, false, durationSeconds, null, null);
   }
 
@@ -303,7 +405,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     if (!isOn) {
       await this.stopTimer(outletId, {
         status: TimerLogStatus.POWER_OFF,
-        note: 'Timer dihentikan karena outlet dimatikan',
+        note: 'Timer stopped because outlet was turned off',
         logWhenInactive: false,
       });
     }
@@ -313,139 +415,37 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     await this.safeTurnOffOutlet(outletId, TimerSource.GEOFENCE, powerstripID);
   }
 
-  private scheduleTimer(outletId: number, endsAt: Date) {
-    this.clearScheduledTimer(outletId);
-    const delay = endsAt.getTime() - Date.now();
-    if (delay <= 0) {
-      void this.finishTimer(outletId);
-      return;
-    }
 
-    const timeout = setTimeout(() => {
-      void this.finishTimer(outletId);
-    }, delay);
-
-    this.scheduledTimers.set(outletId, timeout);
-  }
-
-  private clearScheduledTimer(outletId: number) {
-    const timeout = this.scheduledTimers.get(outletId);
-    if (timeout) {
-      clearTimeout(timeout);
-      this.scheduledTimers.delete(outletId);
-    }
-  }
-
-  private clearAllTimers() {
-    for (const timeout of this.scheduledTimers.values()) {
-      clearTimeout(timeout);
-    }
-    this.scheduledTimers.clear();
-  }
-
-  // relay mati ketika timerEndsAt == TRUE
-  private async finishTimer(outletId: number) {
-    this.clearScheduledTimer(outletId);
+  private async getOutletName(outletId: number): Promise<string> {
     const outlet = await this.prisma.outlet.findUnique({
       where: { outletID: outletId },
-      select: {
-        outletID: true,
-        timerIsActive: true,
-        timerEndsAt: true,
-        timerDuration: true,
-        timerSource: true,
-        powerstripID: true,
-      },
+      select: { name: true, index: true },
     });
-
-    if (!outlet?.timerIsActive) {
-      return;
-    }
-
-    let createdTimerLog: { timerLogID: number } | null = null;
-    let createdRequestId: number | null = null;
-
-    await this.prisma.$transaction(async (tx) => {
-      createdTimerLog = await tx.timerLog.create({
-        data: {
-          outletID: outletId,
-          status: TimerLogStatus.COMPLETED,
-          durationSeconds: outlet.timerDuration ?? undefined,
-          remainingSeconds: 0,
-          note:
-            outlet.timerSource === TimerSource.GEOFENCE
-              ? 'Timer geofence selesai dan relay dimatikan otomatis'
-              : 'Timer selesai dan relay dimatikan otomatis',
-          source: outlet.timerSource ?? null,
-        },
-      });
-
-      await tx.outlet.update({
-        where: { outletID: outletId },
-        data: {
-          timerIsActive: false,
-          timerDuration: outlet.timerDuration,
-          timerEndsAt: null,
-          timerSource: null,
-        },
-      });
-
-      if (outlet.timerSource === TimerSource.GEOFENCE && outlet.powerstripID != null) {
-        const request = await tx.autoShutdownRequest.create({
-          data: {
-            outletID: outletId,
-            powerstripID: outlet.powerstripID,
-            source: TimerSource.GEOFENCE,
-            timerLogID: createdTimerLog?.timerLogID ?? null,
-            note: 'Menunggu konfirmasi pengguna untuk auto shutdown',
-          },
-        });
-        createdRequestId = request.requestID;
-
-        await tx.geofenceSetting.updateMany({
-          where: { powerstripID: outlet.powerstripID },
-          data: {
-            countdownIsActive: false,
-            countdownStartedAt: null,
-            countdownEndsAt: null,
-          },
-        });
-
-        await tx.notificationLog.create({
-          data: {
-            outletID: outletId,
-            message: 'Timer geofence selesai. Pilih apakah ingin mematikan outlet sekarang.',
-          },
-        });
-      }
-    });
-
-    if (outlet.timerSource === TimerSource.GEOFENCE) {
-      this.logger.log(
-        `Timer geofence selesai untuk outlet ${outletId}; menunggu konfirmasi auto shutdown (request: ${createdRequestId ?? 'n/a'})`,
-      );
-      return;
-    }
-
-    this.logger.log(
-      `Timer selesai untuk outlet ${outletId}, mematikan relay (source: ${outlet.timerSource ?? 'unknown'})`,
-    );
-    await this.safeTurnOffOutlet(outletId, outlet.timerSource ?? null, outlet.powerstripID ?? null);
+    return outlet?.name || `Outlet ${outlet?.index || outletId}`;
   }
 
   private async safeTurnOffOutlet(
     outletId: number,
     source: TimerSource | null,
-    powerstripID: number | null,
+    powerstripID: number | null
   ) {
     try {
-      await this.mqttService.controlOutlet(outletId, false);
-      if (source === TimerSource.GEOFENCE) {
-        await this.recordNotification(
-          outletId,
-          'Auto shutdown selesai: Outlet dimatikan karena berada di luar radius geofence.',
-        );
-        if (powerstripID) {
+      // If timer originated from geofencing and has powerstripID
+      if (source === TimerSource.GEOFENCE && powerstripID) {
+        // Get all outlets that are still on from the same powerstrip
+        const activeOutlets = await this.prisma.outlet.findMany({
+          where: {
+            powerstripID: powerstripID,
+            state: true, // only outlets that are still on
+          },
+          select: {
+            outletID: true,
+            name: true,
+            index: true,
+          },
+        });
+
+        if (activeOutlets.length === 0) {
           await this.prisma.geofenceSetting.updateMany({
             where: { powerstripID },
             data: {
@@ -455,66 +455,81 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
               lastAutoShutdownAt: new Date(),
             },
           });
+          this.logger.log(
+            `Geofence timer completed: no active outlets for powerstrip ${powerstripID}`
+          );
+          return;
         }
+
+        const outletIds = activeOutlets.map((outlet) => outlet.outletID);
+
+        await this.prisma.$transaction(async (tx) => {
+          await tx.outlet.updateMany({
+            where: {
+              outletID: {
+                in: outletIds,
+              },
+            },
+            data: {
+              state: false,
+              timerIsActive: false,
+              timerEndsAt: null,
+              timerSource: null,
+            },
+          });
+        });
+
+        await Promise.all(
+          activeOutlets.map((outlet) => this.mqttService.controlOutlet(outlet.outletID, false)),
+        );
+
+        // Record ONE notification for ALL outlets (not per outlet)
+        // Only record if there were outlets to turn off
+        const outletNames = activeOutlets
+          .map((o) => o.name || `Outlet ${o.index || o.outletID}`)
+          .join(', ');
+
+        // Record notification to the first outlet (or any outlet in the powerstrip)
+        await this.recordNotification(
+          activeOutlets[0].outletID,
+          `Geofence auto-shutdown: ${activeOutlets.length} outlet(s) turned off (${outletNames})`,
+        );
+
+        // Update geofence status
+        await this.prisma.geofenceSetting.updateMany({
+          where: { powerstripID },
+          data: {
+            countdownIsActive: false,
+            countdownEndsAt: null,
+            countdownStartedAt: null,
+            lastAutoShutdownAt: new Date(),
+          },
+        });
+
+        this.logger.log(
+          `Geofence timer completed: ${activeOutlets.length} outlet(s) turned off for powerstrip ${powerstripID}`
+        );
+      } else {
+        // Logic for non-geofencing timer remains the same
+        await this.mqttService.controlOutlet(outletId, false);
       }
     } catch (error) {
+      // Error handling remains the same
       const err = error as Error;
       this.logger.error(
-        `Gagal mematikan outlet ${outletId} setelah timer selesai: ${err.message}`,
-        err.stack,
+        `Failed to turn off outlet ${outletId} after timer completed: ${err.message}`,
+        err.stack
       );
       await this.prisma.timerLog.create({
         data: {
           outletID: outletId,
           status: TimerLogStatus.AUTO_CANCELLED,
-          note: 'Gagal mengirim perintah MQTT untuk mematikan outlet',
+          note: 'Failed to send MQTT command to turn off outlet',
         },
       });
-      if (source === TimerSource.GEOFENCE) {
-        await this.recordNotification(
-          outletId,
-          'Auto shutdown gagal: Perintah mematikan outlet tidak berhasil terkirim.',
-        );
-      }
     }
   }
 
-  private async restoreTimers() {
-    const activeTimers = await this.prisma.outlet.findMany({
-      where: {
-        timerIsActive: true,
-        timerEndsAt: {
-          not: null,
-        },
-      },
-      select: {
-        outletID: true,
-        timerEndsAt: true,
-      },
-    });
-
-    if (!activeTimers.length) {
-      return;
-    }
-
-    this.logger.log(`Merestore ${activeTimers.length} timer outlet dari database`);
-
-    for (const timer of activeTimers) {
-      if (!timer.timerEndsAt) {
-        continue;
-      }
-
-      const delay = timer.timerEndsAt.getTime() - Date.now();
-      if (delay <= 0) {
-        void this.finishTimer(timer.outletID);
-      } else {
-        const timeout = setTimeout(() => {
-          void this.finishTimer(timer.outletID);
-        }, delay);
-        this.scheduledTimers.set(timer.outletID, timeout);
-      }
-    }
-  }
 
   private buildStatus(
     outletId: number,

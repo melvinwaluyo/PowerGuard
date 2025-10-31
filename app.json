@@ -19,11 +19,15 @@
       }
     },
     "ios": {
-      "bundleIdentifier": "com.mlvwly.PowerGuard",
+      "bundleIdentifier": "com.capstonea04.PowerGuard",
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "PowerGuard needs your location to set your home address for geofencing features.",
-        "ITSAppUsesNonExemptEncryption": false
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "PowerGuard needs your location in the background to detect when you leave home with outlets still on and automatically shut them down.",
+        "NSLocationAlwaysUsageDescription": "PowerGuard needs background location access to detect when you leave home with outlets still on.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"],
+        "NSMicrophoneUsageDescription": "PowerGuard needs access to play alert sounds when you leave home with outlets still on."
       }
     },
     "android": {
@@ -46,8 +50,15 @@
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
       "package": "com.anonymous.PowerGuard"
     },
@@ -61,9 +72,29 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "PowerGuard needs your location to set your home address for geofencing features."
+          "locationAlwaysAndWhenInUsePermission": "PowerGuard uses geofencing to detect when you leave home with outlets still on and automatically shut them down.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": false
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icons/adaptive-icon.png",
+          "color": "#0F0E41",
+          "sounds": ["./assets/sounds/critical.wav", "./assets/sounds/normal.wav"],
+          "mode": "production"
+        }
+      ],
+      [
+        "expo-background-fetch",
+        {
+          "android": {
+            "minimumIntervalMinutes": 3
+          }
+        }
+      ],
+      "expo-task-manager",
       [
         "expo-splash-screen",
         {
@@ -76,7 +107,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -88,7 +120,7 @@
         "projectId": "b0fe4763-46db-427e-92f5-a4b73c69fc59"
       }
     },
-    "owner": "mlvwly",
+    "owner": "capstonea04",
     "runtimeVersion": {
       "policy": "appVersion"
     },

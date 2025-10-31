@@ -3,18 +3,24 @@ import AutoShutdownSection from "@/components/AutoShutdownSection";
 import { BottomNavigation } from "@/components/BottomNavigation";
 import GeofencingSection from "@/components/GeofencingSection";
 import PinLocationSection from "@/components/PinLocationSection";
+import NotificationPreferencesSection from "@/components/NotificationPreferencesSection";
 import { Platform, ScrollView, StatusBar, Text, View, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocation } from "@/context/LocationContext";
 import { useGeofenceMonitor, DEFAULT_POWERSTRIP_ID } from "@/context/GeofenceMonitorContext";
+import { useOutlets } from "@/context/OutletContext";
 import { api } from "@/services/api";
 
 export default function SettingsScreen() {
   const { pendingLocation, setPendingLocation } = useLocation();
-  const { settings, status, refreshSettings, updateSettingsLocal, pendingRequest, isResolvingRequest } =
+  const { settings, status, refreshSettings, updateSettingsLocal, pendingRequest, isResolvingRequest, forceGeofenceEvaluation } =
     useGeofenceMonitor();
+  const { outlets } = useOutlets();
   const [isSaving, setIsSaving] = useState(false);
   const isLoading = !settings;
+
+  // Check if any outlets are currently ON
+  const hasActiveOutlets = outlets.some(outlet => outlet.isOn);
 
   const insets = useSafeAreaInsets();
 
@@ -40,13 +46,22 @@ export default function SettingsScreen() {
   }, [pendingLocation]);
 
   const handleToggleGeofencing = async (enabled: boolean) => {
-    if (!settings) return;
+    if (!settings || isSaving) return; // Prevent double-toggling
     const previous = geofencingEnabled;
     try {
       setIsSaving(true);
       updateSettingsLocal({ isEnabled: enabled });
       await api.updateGeofenceEnabled(DEFAULT_POWERSTRIP_ID, enabled);
       await refreshSettings();
+
+      // If enabling geofencing, immediately evaluate current position
+      if (enabled && settings.latitude != null && settings.longitude != null) {
+        console.log('[Settings] Geofencing enabled - forcing immediate evaluation');
+        await forceGeofenceEvaluation();
+      }
+
+      // Add a small delay before allowing next toggle (300ms cooldown)
+      await new Promise((resolve) => setTimeout(resolve, 300));
     } catch (error) {
       console.error('Failed to update geofencing enabled:', error);
       // Revert on error
@@ -71,6 +86,12 @@ export default function SettingsScreen() {
         autoShutdownTime,
       });
       await refreshSettings();
+
+      // Force immediate evaluation since radius change may affect zone status
+      if (geofencingEnabled) {
+        console.log('[Settings] Radius updated - forcing immediate geofence evaluation');
+        await forceGeofenceEvaluation();
+      }
     } catch (error) {
       console.error('Failed to save radius:', error);
       updateSettingsLocal({ radius: previous });
@@ -120,6 +141,11 @@ export default function SettingsScreen() {
         autoShutdownTime,
       });
       await refreshSettings();
+
+      // Force immediate geofence evaluation with current device location
+      // This ensures the app immediately checks if the device is inside/outside the new home location
+      console.log('[Settings] Home location updated - forcing immediate geofence evaluation');
+      await forceGeofenceEvaluation();
     } catch (error) {
       console.error('Failed to save location:', error);
     } finally {
@@ -157,6 +183,7 @@ export default function SettingsScreen() {
           onToggle={handleToggleGeofencing}
           radius={radius}
           onRadiusChange={handleRadiusChange}
+          isSaving={isSaving}
         />
         {geofencingEnabled && (
           <>
@@ -166,6 +193,7 @@ export default function SettingsScreen() {
               countdownRemainingSeconds={status.remainingSeconds}
               geofenceZone={status.zone}
               pendingRequest={pendingRequest}
+              hasActiveOutlets={hasActiveOutlets}
               onShutdownTimeChange={handleShutdownTimeChange}
               isSaving={isSaving || isResolvingRequest}
             />
@@ -176,6 +204,7 @@ export default function SettingsScreen() {
             />
           </>
         )}
+        <NotificationPreferencesSection />
       </ScrollView>
       <BottomNavigation activeTab="settings" />
     </View>
