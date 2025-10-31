@@ -9,11 +9,20 @@ import { useEffect } from "react";
 import { Alert, Platform } from "react-native";
 import { registerBackgroundFetch } from "@/tasks/backgroundFetch";
 import { isGeofencingActive } from "@/tasks/backgroundGeofencing";
+import { initializeFCM } from "@/services/fcm";
 import "../global.css";
 
 export default function RootLayout() {
   useEffect(() => {
     async function initializeApp() {
+      // Initialize FCM (Firebase Cloud Messaging)
+      try {
+        await initializeFCM();
+        console.log("[App] FCM initialized successfully");
+      } catch (error) {
+        console.warn("[App] FCM initialization failed:", error);
+      }
+
       // Register background fetch task (only works in standalone builds, not Expo Go)
       try {
         await registerBackgroundFetch();

@@ -1,48 +1,11 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import * as Notifications from "expo-notifications";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
 import { api } from "@/services/api";
-import { getNotificationPreferences } from "@/utils/notificationPreferences";
 
 const GEOFENCE_TASK = "background-geofence-task";
 const DEFAULT_POWERSTRIP_ID = 1;
-const LAST_ENTER_NOTIFICATION_KEY = "last_geofence_enter_notification";
-const LAST_EXIT_NOTIFICATION_KEY = "last_geofence_exit_notification";
 
-console.log("[Geofencing] Task definition loaded");
-
-/**
- * Check if we should show a notification based on cooldown period
- */
-async function shouldShowNotification(key: string, cooldownMs: number = 60000): Promise<boolean> {
-  try {
-    const lastShown = await AsyncStorage.getItem(key);
-    if (lastShown) {
-      const timeSince = Date.now() - parseInt(lastShown, 10);
-      if (timeSince < cooldownMs) {
-        console.log(`[Geofencing] Notification cooldown active (${Math.round(timeSince / 1000)}s ago)`);
-        return false;
-      }
-    }
-    return true;
-  } catch (error) {
-    console.error("[Geofencing] Failed to check notification cooldown:", error);
-    return true; // Show notification if check fails
-  }
-}
-
-/**
- * Mark that a notification was shown
- */
-async function markNotificationShown(key: string): Promise<void> {
-  try {
-    await AsyncStorage.setItem(key, Date.now().toString());
-  } catch (error) {
-    console.error("[Geofencing] Failed to mark notification as shown:", error);
-  }
-}
+console.log("[Geofencing] Task definition loaded - notifications handled by FCM");
 
 /**
  * Background geofencing task - triggered only on ENTER/EXIT events
@@ -66,9 +29,6 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
     console.log(`[Geofencing] Event: ${eventType === Location.GeofencingEventType.Enter ? 'ENTER' : 'EXIT'} region ${region.identifier}`);
 
     try {
-      // Get notification preferences
-      const preferences = await getNotificationPreferences();
-
       // Get current location for precise distance calculation
       const currentLocation = await Location.getLastKnownPositionAsync({});
 
@@ -84,43 +44,10 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
       });
 
       // EXITING geofence (left home)
+      // Notification is now handled by backend via FCM
       if (eventType === Location.GeofencingEventType.Exit && evaluation.countdownIsActive) {
         const activeOutletCount = evaluation.triggeredOutlets?.length || 0;
-
-        if (activeOutletCount > 0 && preferences.leftZoneWithOutletsOn) {
-          // Check cooldown - only show if not shown in last 60 seconds
-          const shouldShow = await shouldShowNotification(LAST_EXIT_NOTIFICATION_KEY, 60000);
-
-          if (shouldShow) {
-            const minutes = Math.floor((evaluation.autoShutdownSeconds || 900) / 60);
-            const seconds = (evaluation.autoShutdownSeconds || 900) % 60;
-            const timerText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-
-            // Send critical notification - user left home with outlets ON
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: "🚨 PowerGuard CRITICAL ALERT",
-                body: `⚠️ You left home with ${activeOutletCount} outlet${activeOutletCount > 1 ? 's' : ''} still ON! Auto-shutdown in ${timerText}.`,
-                sound: 'critical.wav',
-                vibrate: false,
-                priority: Notifications.AndroidNotificationPriority.MAX,
-                sticky: true,
-                data: {
-                  type: 'geofence_exit',
-                  activeOutletCount,
-                },
-              },
-              trigger: null,
-              identifier: `geofence-exit-${Date.now()}`,
-              ...(Platform.OS === 'android' ? { channelId: 'critical-alerts-v3' } : {}),
-            });
-
-            await markNotificationShown(LAST_EXIT_NOTIFICATION_KEY);
-            console.log(`[Geofencing] Sent EXIT alert - ${activeOutletCount} outlets still on`);
-          } else {
-            console.log(`[Geofencing] Skipped EXIT notification (cooldown active)`);
-          }
-        }
+        console.log(`[Geofencing] EXIT detected - ${activeOutletCount} outlets still on (FCM notification sent by backend)`);
       }
 
       // ENTERING geofence (returned home)
@@ -132,24 +59,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
         // No need to send immediate notification here
       }
 
-      // Check for pending auto-shutdown requests
-      if (evaluation.pendingRequest && preferences.geofenceTimerCompleted) {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "⚠️ Auto Shutdown Ready",
-            body: "Geofence timer completed. Open PowerGuard to confirm shutdown.",
-            sound: 'normal.wav',
-            vibrate: false,
-            priority: Notifications.AndroidNotificationPriority.HIGH,
-            data: {
-              requestId: evaluation.pendingRequest.requestId,
-              outletId: evaluation.pendingRequest.outletId,
-            },
-          },
-          trigger: null,
-          ...(Platform.OS === 'android' ? { channelId: 'app-notifications' } : {}),
-        });
-      }
+      // Auto-shutdown notifications now handled by FCM from backend
 
       console.log("[Geofencing] Processed:", {
         event: eventType === Location.GeofencingEventType.Enter ? 'ENTER' : 'EXIT',

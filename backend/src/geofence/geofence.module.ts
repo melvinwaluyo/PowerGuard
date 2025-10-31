@@ -4,9 +4,10 @@ import { GeofenceService } from './geofence.service';
 import { GeofenceAutomationService } from './geofence-automation.service';
 import { AutoShutdownService } from './auto-shutdown.service';
 import { TimerModule } from '../timer/timer.module';
+import { FcmModule } from '../fcm/fcm.module';
 
 @Module({
-  imports: [TimerModule],
+  imports: [TimerModule, FcmModule],
   controllers: [GeofenceController],
   providers: [GeofenceService, GeofenceAutomationService, AutoShutdownService],
   exports: [GeofenceService, GeofenceAutomationService, AutoShutdownService],

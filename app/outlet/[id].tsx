@@ -182,6 +182,13 @@ export default function OutletDetailsScreen() {
 
   const applyTimerStatus = useCallback(
     (status: TimerStatusResponse) => {
+      console.log('[Timer] applyTimerStatus called with:', {
+        isActive: status.isActive,
+        durationSeconds: status.durationSeconds,
+        remainingSeconds: status.remainingSeconds,
+        timerPresetSeconds,
+      });
+
       const fallbackDuration =
         status.durationSeconds && status.durationSeconds > 0
           ? status.durationSeconds
@@ -190,6 +197,11 @@ export default function OutletDetailsScreen() {
       const safeRemaining = status.isActive
         ? Math.max(0, status.remainingSeconds ?? safeDuration)
         : safeDuration;
+
+      console.log('[Timer] Calculated values:', {
+        safeDuration,
+        safeRemaining,
+      });
 
       const nextState: OutletTimerState = {
         isActive: status.isActive,
@@ -252,51 +264,32 @@ export default function OutletDetailsScreen() {
     geofenceStatus.countdownIsActive &&
     Boolean(geofenceStatus.countdownEndsAt);
 
-  useEffect(() => {
-    if (isGeofenceTimerActive) {
-      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
-      return;
-    }
-
-    if (!timerState) {
-      setCountdownSeconds(timerPresetSeconds);
-      return;
-    }
-
-    if (!timerState.isActive || !timerState.endsAt) {
-      setCountdownSeconds(timerState.durationSeconds);
-      return;
-    }
-
-    const computeRemaining = () => {
-      const parsedEnds = parseIsoDate(timerState.endsAt);
-      if (!parsedEnds) {
-        return timerPresetSeconds;
-      }
-      return Math.max(0, Math.round((parsedEnds.getTime() - Date.now()) / 1000));
-    };
-
-    setCountdownSeconds(computeRemaining());
-
-    const interval = setInterval(() => {
-      const remaining = computeRemaining();
-      setCountdownSeconds(remaining);
-
-      if (remaining <= 0) {
-        clearInterval(interval);
-        void refreshTimerStatus();
-        void loadTimerLogs();
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds, timerState, timerPresetSeconds, refreshTimerStatus, loadTimerLogs]);
-
+  // Sync countdown with timer state - only update when timer changes or becomes inactive
   useEffect(() => {
     if (isGeofenceTimerActive) {
       setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
     }
   }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds]);
+
+  useEffect(() => {
+    if (isGeofenceTimerActive) return;
+
+    if (!timerState) {
+      // When no timer state exists, show the preset duration
+      setCountdownSeconds(timerPresetSeconds);
+      return;
+    }
+
+    // Use remainingSeconds from backend when timer is active
+    if (timerState.isActive) {
+      console.log('[Timer] Updating countdown to remainingSeconds:', timerState.remainingSeconds);
+      setCountdownSeconds(timerState.remainingSeconds);
+    } else {
+      // When timer is not active, show the duration (preset)
+      console.log('[Timer] Updating countdown to durationSeconds:', timerState.durationSeconds);
+      setCountdownSeconds(timerState.durationSeconds);
+    }
+  }, [isGeofenceTimerActive, timerState, timerPresetSeconds]);
 
   const handleTimerDurationChange = useCallback(
     async (nextSeconds: number) => {
@@ -332,11 +325,13 @@ export default function OutletDetailsScreen() {
 
       try {
         const status = await api.updateOutletTimerPreset(outlet.id, safeSeconds);
+        // Save to persistent storage for future use
+        await saveLastTimerSeconds(safeSeconds);
+
+        // Apply the status from backend response
         applyTimerStatus(status);
         await loadTimerLogs();
         await refreshOutlets();
-        // Save to persistent storage for future use
-        await saveLastTimerSeconds(safeSeconds);
       } catch (error) {
         console.error("Failed to update timer preset:", error);
         setTimerState(previousState ?? null);
@@ -350,10 +345,8 @@ export default function OutletDetailsScreen() {
         });
         throw error;
       } finally {
-        // Allow updates again after a short delay to ensure backend has updated
-        setTimeout(() => {
-          isUpdatingTimerPresetRef.current = false;
-        }, 500);
+        // Reset the flag immediately after processing is complete
+        isUpdatingTimerPresetRef.current = false;
       }
     },
     [
@@ -643,10 +636,15 @@ function StatusSection({
   const [draftTimer, setDraftTimer] = useState<TimerDurationValue>(secondsToDuration(timerPresetSeconds));
   const [isSavingPreset, setSavingPreset] = useState(false);
 
+  // Update draft timer only when preset changes significantly or modal opens
+  // Use a ref to track the last applied preset to prevent flickering
+  const lastAppliedPresetRef = useRef(timerPresetSeconds);
+
   useEffect(() => {
-    // Only update draft when modal is not visible to prevent flickering while editing
-    if (!modalVisible && !isSavingPreset) {
+    // Only update draft when modal is not visible and preset has actually changed
+    if (!modalVisible && !isSavingPreset && lastAppliedPresetRef.current !== timerPresetSeconds) {
       setDraftTimer(secondsToDuration(timerPresetSeconds));
+      lastAppliedPresetRef.current = timerPresetSeconds;
     }
   }, [timerPresetSeconds, modalVisible, isSavingPreset]);
 

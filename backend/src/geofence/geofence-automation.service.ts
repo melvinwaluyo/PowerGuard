@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AutoShutdownStatus, GeofenceZone, TimerLogStatus, TimerSource } from '@prisma/client';
 import { TimerService } from '../timer/timer.service';
+import { FcmService } from '../fcm/fcm.service';
 
 export interface GeofenceLocationPayload {
   latitude: number;
@@ -14,6 +15,7 @@ export interface GeofenceEvaluationResult {
   distanceMeters: number;
   countdownIsActive: boolean;
   countdownEndsAt: string | null;
+  remainingSeconds: number;
   autoShutdownSeconds: number | null;
   triggeredOutlets: number[];
   pendingRequest: {
@@ -33,7 +35,19 @@ export class GeofenceAutomationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly timerService: TimerService,
+    private readonly fcmService: FcmService,
   ) {}
+
+  /**
+   * Calculate remaining seconds until countdown ends
+   */
+  private calculateRemainingSeconds(countdownEndsAt: Date | string | null): number {
+    if (!countdownEndsAt) return 0;
+    const endsAtTime = countdownEndsAt instanceof Date
+      ? countdownEndsAt.getTime()
+      : new Date(countdownEndsAt).getTime();
+    return Math.max(0, Math.round((endsAtTime - Date.now()) / 1000));
+  }
 
   async evaluateLocation(
     powerstripID: number,
@@ -49,6 +63,7 @@ export class GeofenceAutomationService {
         distanceMeters: 0,
         countdownIsActive: false,
         countdownEndsAt: null,
+        remainingSeconds: 0,
         autoShutdownSeconds: null,
         triggeredOutlets: [],
         pendingRequest: null,
@@ -105,6 +120,7 @@ export class GeofenceAutomationService {
           distanceMeters,
           countdownIsActive: false,
           countdownEndsAt: null,
+          remainingSeconds: 0,
           autoShutdownSeconds,
           triggeredOutlets,
           pendingRequest: serializedPending,
@@ -144,6 +160,7 @@ export class GeofenceAutomationService {
             distanceMeters,
             countdownIsActive: false,
             countdownEndsAt: null,
+            remainingSeconds: 0,
             autoShutdownSeconds,
             triggeredOutlets,
             pendingRequest: serializedPending,
@@ -188,11 +205,35 @@ export class GeofenceAutomationService {
           },
         });
 
+        // Send FCM notification: User left home with outlets ON
+        if (triggeredOutlets.length > 0) {
+          const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
+          if (tokens.length > 0) {
+            const minutes = Math.floor(autoShutdownSeconds / 60);
+            const seconds = autoShutdownSeconds % 60;
+            const timerText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+            await this.fcmService.sendToMultipleDevices(
+              tokens,
+              'PowerGuard CRITICAL ALERT',
+              `You left home with ${triggeredOutlets.length} outlet${triggeredOutlets.length > 1 ? 's' : ''} still ON! Auto-shutdown in ${timerText}.`,
+              {
+                type: 'geofence_exit',
+                activeOutletCount: triggeredOutlets.length.toString(),
+                powerstripId: powerstripID.toString(),
+              },
+              true, // isCritical
+            );
+            this.logger.log(`[FCM] Sent geofence exit notification to ${tokens.length} device(s)`);
+          }
+        }
+
         return {
           zone,
           distanceMeters,
           countdownIsActive: true,
           countdownEndsAt: countdownEndsAtIso,
+          remainingSeconds: this.calculateRemainingSeconds(countdownEndsAtDate),
           autoShutdownSeconds,
           triggeredOutlets,
           pendingRequest: serializedPending,
@@ -228,6 +269,7 @@ export class GeofenceAutomationService {
           distanceMeters,
           countdownIsActive: false,
           countdownEndsAt: null,
+          remainingSeconds: 0,
           autoShutdownSeconds,
           triggeredOutlets,
           pendingRequest: serializedPending,
@@ -245,6 +287,7 @@ export class GeofenceAutomationService {
         distanceMeters,
         countdownIsActive: true,
         countdownEndsAt: settings.countdownEndsAt ? settings.countdownEndsAt.toISOString() : null,
+        remainingSeconds: this.calculateRemainingSeconds(settings.countdownEndsAt),
         autoShutdownSeconds,
         triggeredOutlets,
         pendingRequest: serializedPending,
@@ -288,10 +331,24 @@ export class GeofenceAutomationService {
       });
 
       if (outlets.length) {
-        await this.createNotification(
-          outlets[0].outletID,
-          'Auto-shutdown cancelled: You returned to safe location.',
-        );
+        const message = 'Auto-shutdown cancelled: You returned to safe location.';
+        await this.createNotification(outlets[0].outletID, message);
+
+        // Send FCM notification for cancelled geofence countdown
+        const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
+        if (tokens.length > 0) {
+          await this.fcmService.sendToMultipleDevices(
+            tokens,
+            'Auto-Shutdown Cancelled',
+            message,
+            {
+              type: 'geofence_cancelled',
+              powerstripId: powerstripID.toString(),
+            },
+            false, // Not critical
+          );
+          this.logger.log(`[FCM] Sent geofence cancellation notification to ${tokens.length} device(s)`);
+        }
       }
     } else if (previousZone !== GeofenceZone.INSIDE) {
       await this.prisma.geofenceSetting.update({
@@ -307,6 +364,7 @@ export class GeofenceAutomationService {
       distanceMeters,
       countdownIsActive: false,
       countdownEndsAt: null,
+      remainingSeconds: 0,
       autoShutdownSeconds,
       triggeredOutlets,
       pendingRequest: pendingRequest

@@ -74,4 +74,7 @@ jobs:
               "MQTT_SERVER=${{ secrets.MQTT_SERVER }}" \
               "MQTT_PORT=${{ secrets.MQTT_PORT }}" \
               "PORT=8080" \
-              "NODE_ENV=production"
+              "NODE_ENV=production" \
+              "FIREBASE_PROJECT_ID=secretref:firebase-project-id" \
+              "FIREBASE_CLIENT_EMAIL=secretref:firebase-client-email" \
+              "FIREBASE_PRIVATE_KEY=secretref:firebase-private-key"

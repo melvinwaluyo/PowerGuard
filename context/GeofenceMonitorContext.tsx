@@ -132,12 +132,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const computeRemainingSeconds = useCallback((endsAtIso: string | null): number => {
-    if (!endsAtIso) return 0;
-    const endsAt = new Date(endsAtIso).getTime();
-    if (Number.isNaN(endsAt)) return 0;
-    return Math.max(0, Math.round((endsAt - Date.now()) / 1000));
-  }, []);
+  // Removed computeRemainingSeconds - now using remainingSeconds from backend
 
   // Request notification permissions
   const requestNotificationPermissions = useCallback(async () => {
@@ -178,93 +173,11 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       reason: 'left_zone' | 'turned_on_outside' = 'left_zone',
       countdownEndsAt?: string | null,
     ) => {
-    // Don't send if geofencing is disabled
-    if (!settings?.isEnabled) {
-      return;
-    }
-
-    // Check notification preferences
-    const preferences = await getNotificationPreferences();
-    const shouldNotify = reason === 'left_zone'
-      ? preferences.leftZoneWithOutletsOn
-      : preferences.turnedOnOutletOutsideZone;
-
-    if (!shouldNotify) {
-      return;
-    }
-
-    // Prevent notification spam - only send once per cooldown period
-    const now = Date.now();
-    if (reason === 'left_zone') {
-      if (now - lastLeftZoneAlertRef.current < 10000) {
-        return;
-      }
-    } else {
-      // For 'turned_on_outside', use a 15-second cooldown to prevent duplicates
-      // when turning on multiple outlets in quick succession
-      if (now - lastTurnedOnOutsideAlertRef.current.timestamp < 15000) {
-        return;
-      }
-    }
-
-    const hasPermission = await requestNotificationPermissions();
-    if (!hasPermission) {
-      return;
-    }
-
-    const minutes = Math.floor(timerSeconds / 60);
-    const seconds = timerSeconds % 60;
-    const timerText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-
-    const bodyText = reason === 'left_zone'
-      ? `⚠️ You left home with ${activeOutletCount} outlet${activeOutletCount > 1 ? 's' : ''} still ON! Auto-shutdown in ${timerText}.`
-      : `⚠️ You turned ON ${activeOutletCount} outlet${activeOutletCount > 1 ? 's' : ''} while outside home! Auto-shutdown in ${timerText}.`;
-
-    try {
-      // Determine notification channel and configuration based on reason
-      const isCritical = reason === 'left_zone';
-      const channelId = isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v2';
-      const title = isCritical ? '🚨 PowerGuard CRITICAL ALERT' : '⚠️ PowerGuard Alert';
-
-      // Play loud sound for critical alerts only
-      if (isCritical) {
-        await playAlertSound();
-      }
-
-      // Send notification using appropriate channel
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body: bodyText + ' Turn off manually or wait for timer.',
-          // Set sound explicitly (required for Android below 8.0 and as fallback)
-          sound: isCritical ? 'critical.wav' : 'normal.wav',
-          priority: isCritical
-            ? Notifications.AndroidNotificationPriority.MAX
-            : Notifications.AndroidNotificationPriority.HIGH,
-          // No vibrate parameter - allows custom sound to work on Android
-          sticky: isCritical, // Only keep critical alerts visible
-          data: {
-            type: 'geofence_alert',
-            reason,
-            isCritical,
-          },
-        },
-        trigger: null, // Show immediately
-        identifier: `geofence-alert-${reason}-${Date.now()}`,
-        // Use appropriate channel on Android
-        ...(Platform.OS === 'android' ? { channelId } : {}),
-      });
-
-      if (reason === 'left_zone') {
-        lastLeftZoneAlertRef.current = now;
-      } else {
-        lastTurnedOnOutsideAlertRef.current.timestamp = now;
-      }
-    } catch (error) {
-      console.error('Failed to send geofence alert:', error);
-    }
+    // Notifications now handled by FCM from backend
+    // This function is kept for API compatibility but does nothing
+    console.log('[GeofenceMonitor] Geofence alert triggered - handled by FCM:', { activeOutletCount, reason });
     },
-    [requestNotificationPermissions, playAlertSound, settings?.isEnabled],
+    [settings?.isEnabled],
   );
 
   const updateStatusFromEvaluation = useCallback(
@@ -313,24 +226,16 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
           distanceMeters: evaluation.distanceMeters,
           countdownIsActive: evaluation.countdownIsActive,
           countdownEndsAt: nextEndsAt,
-          remainingSeconds: computeRemainingSeconds(nextEndsAt),
+          remainingSeconds: evaluation.remainingSeconds,
         };
       });
 
       // Detect zone change from INSIDE to OUTSIDE (user left home)
+      // Notification is now handled by backend via FCM
       const justLeftZone = previousZone === "INSIDE" && newZone === "OUTSIDE" && evaluation.countdownIsActive;
       if (justLeftZone) {
-        // Get active outlet count from triggered outlets
         const activeOutletCount = evaluation.triggeredOutlets?.length || 0;
-        if (activeOutletCount > 0) {
-          // Send alert with sound - user left home with outlets ON
-          sendGeofenceAlert(
-            activeOutletCount,
-            evaluation.autoShutdownSeconds || 900,
-            'left_zone',
-            evaluation.countdownEndsAt ?? null,
-          );
-        }
+        console.log(`[Geofence] Left zone with ${activeOutletCount} outlets on (FCM notification sent by backend)`);
       }
 
       if (previousCountdownActive && !evaluation.countdownIsActive) {
@@ -338,7 +243,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
       }
 
       // Detect turning on outlets while already outside (countdown activated while zone stays OUTSIDE)
-      // BUT: Skip this check if we just sent a "left_zone" notification (prevents duplicate)
+      // Notification is now handled by backend via FCM
       if (
         !justLeftZone &&
         previousZone === "OUTSIDE" &&
@@ -347,13 +252,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
         (evaluation.triggeredOutlets?.length ?? 0) > 0
       ) {
         const activeOutletCount = evaluation.triggeredOutlets?.length ?? 0;
-        const timerSeconds = evaluation.autoShutdownSeconds || settings?.autoShutdownTime || 900;
-        void sendGeofenceAlert(
-          activeOutletCount,
-          timerSeconds,
-          'turned_on_outside',
-          evaluation.countdownEndsAt ?? null,
-        );
+        console.log(`[Geofence] Turned on ${activeOutletCount} outlets while outside (FCM notification sent by backend)`);
       }
 
       // Detect zone change from OUTSIDE to INSIDE (user entered home)
@@ -380,7 +279,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
         shownRequestRef.current = null;
       }
     },
-    [computeRemainingSeconds, sendGeofenceAlert],
+    [sendGeofenceAlert],
   );
 
   const clearIntervals = useCallback(() => {
@@ -397,12 +296,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   const scheduleIntervals = useCallback(() => {
     clearIntervals();
     if (status.countdownIsActive && status.countdownEndsAt) {
-      countdownIntervalRef.current = setInterval(() => {
-        setStatus((prev) => ({
-          ...prev,
-          remainingSeconds: computeRemainingSeconds(prev.countdownEndsAt),
-        }));
-      }, 1000);
+      // Removed countdown interval - remainingSeconds now comes from backend polling
 
       // During countdown, poll location every 5 seconds to detect if user returns home
       // This supplements native geofencing with faster detection during the critical countdown period
@@ -422,7 +316,7 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
         }
       }, 5000); // Poll every 5 seconds during countdown for faster detection
     }
-  }, [clearIntervals, computeRemainingSeconds, reportLocation, status.countdownEndsAt, status.countdownIsActive]);
+  }, [clearIntervals, reportLocation, status.countdownEndsAt, status.countdownIsActive]);
 
   useEffect(() => {
     scheduleIntervals();

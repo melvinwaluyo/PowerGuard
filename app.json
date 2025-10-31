@@ -60,7 +60,8 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
-      "package": "com.anonymous.PowerGuard"
+      "package": "com.capstonea04.PowerGuard",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
@@ -108,7 +109,8 @@
           }
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "@react-native-firebase/app"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as mqtt from 'mqtt';
 import { MqttClient } from 'mqtt';
 import { PrismaService } from '../prisma.service';
+import { FcmService } from '../fcm/fcm.service';
 
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
@@ -11,6 +12,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private fcmService: FcmService,
   ) {}
 
   async onModuleInit() {
@@ -122,7 +124,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const durationSeconds = typeof data.durationSeconds === 'number' ? data.durationSeconds : 0;
     const source = data.source || null;
 
-    console.log(`Timer status for outlet ${outletId}: active=${isActive}, remaining=${remainingSeconds}s`);
+    console.log(`[MQTT] Timer status received for outlet ${outletId}:`, {
+      isActive,
+      remainingSeconds,
+      durationSeconds,
+      source,
+      rawData: data
+    });
 
     // Get current outlet state to detect timer completion
     const currentOutlet = await this.prisma.outlet.findUnique({
@@ -131,6 +139,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         timerIsActive: true,
         timerDuration: true,
         timerSource: true,
+        timerEndsAt: true,
         name: true,
         index: true,
         powerstripID: true
@@ -145,9 +154,19 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       durationSeconds > 0;
 
     // Calculate timerEndsAt from remaining seconds
-    const timerEndsAt = isActive && remainingSeconds > 0
-      ? new Date(Date.now() + (remainingSeconds * 1000))
-      : null;
+    // IMPORTANT: Only calculate if timer is newly activated OR if no endsAt exists
+    // Don't recalculate on every status update to prevent time drift
+    let timerEndsAt: Date | null = null;
+    if (isActive && remainingSeconds > 0) {
+      if (!currentOutlet?.timerIsActive || !currentOutlet?.timerEndsAt) {
+        // Timer is newly starting, calculate endsAt
+        timerEndsAt = new Date(Date.now() + (remainingSeconds * 1000));
+        console.log(`Timer starting for outlet ${outletId}: endsAt=${timerEndsAt.toISOString()}`);
+      } else {
+        // Timer already active, keep existing endsAt to prevent drift
+        timerEndsAt = currentOutlet.timerEndsAt;
+      }
+    }
 
     // Update database with timer status from STM32
     await this.prisma.outlet.update({
@@ -203,12 +222,38 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
             : `${hours} hour(s)`;
         }
 
+        const message = `Timer completed: ${outletName} turned off after ${durationText}`;
+
         await this.prisma.notificationLog.create({
           data: {
             outletID: outletId,
-            message: `Timer completed: ${outletName} turned off after ${durationText}`
+            message
           }
         });
+
+        // Send FCM notification for manual timer completion
+        const outlet = await this.prisma.outlet.findUnique({
+          where: { outletID: outletId },
+          select: { powerstripID: true }
+        });
+
+        if (outlet?.powerstripID) {
+          const tokens = await this.fcmService.getTokensForPowerstrip(outlet.powerstripID);
+          if (tokens.length > 0) {
+            await this.fcmService.sendToMultipleDevices(
+              tokens,
+              'Timer Completed',
+              message,
+              {
+                type: 'timer_completed',
+                outletId: outletId.toString(),
+                source: 'manual',
+              },
+              false, // Not critical
+            );
+            console.log(`[FCM] Sent manual timer completion notification to ${tokens.length} device(s)`);
+          }
+        }
       }
 
       console.log(`✅ Timer completed for outlet ${outletId} - state updated, logs created`);
@@ -259,12 +304,31 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           .map(o => o.name || `Outlet ${o.index || o.outletID}`)
           .join(', ');
 
+        const message = `Geofence auto-shutdown: ${recentlyTurnedOffOutlets.length} outlet(s) turned off (${outletNames})`;
+
         await this.prisma.notificationLog.create({
           data: {
             outletID: recentlyTurnedOffOutlets[0].outletID,
-            message: `Geofence auto-shutdown: ${recentlyTurnedOffOutlets.length} outlet(s) turned off (${outletNames})`
+            message
           }
         });
+
+        // Send FCM notification for geofence timer completion
+        const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
+        if (tokens.length > 0) {
+          await this.fcmService.sendToMultipleDevices(
+            tokens,
+            'Geofence Auto-Shutdown',
+            message,
+            {
+              type: 'geofence_timer_completed',
+              outletCount: recentlyTurnedOffOutlets.length.toString(),
+              powerstripId: powerstripID.toString(),
+            },
+            false, // Not critical
+          );
+          console.log(`[FCM] Sent geofence timer completion notification to ${tokens.length} device(s)`);
+        }
 
         console.log(`✅ Geofence consolidated notification created for ${recentlyTurnedOffOutlets.length} outlets`);
       }

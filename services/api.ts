@@ -476,6 +476,45 @@ class ApiService {
     }
   }
 
+  // FCM Token Management
+  async registerFCMToken(data: { token: string; platform: string; deviceId: string }) {
+    try {
+      const response = await fetch(`${this.baseUrl}/fcm/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error registering FCM token:', error);
+      throw error;
+    }
+  }
+
+  async unregisterFCMToken(token: string) {
+    try {
+      const response = await fetch(`${this.baseUrl}/fcm/unregister`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error unregistering FCM token:', error);
+      throw error;
+    }
+  }
+
   // Development/Testing Utilities
   async clearAllUsageData() {
     try {

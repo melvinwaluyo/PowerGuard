@@ -76,8 +76,15 @@ function PickerColumn({
     });
   }, [safeSelected, values, centerVisibleRow]);
 
+  const isScrolling = useRef(false);
+
   const alignToNearest = useCallback(
     (offset: number) => {
+      // Don't align while user is actively scrolling
+      if (isScrolling.current) {
+        return;
+      }
+
       // Calculate which data item is in the middle visible row
       const middleDataIndex = Math.round(offset / ITEM_HEIGHT) + centerVisibleRow;
       // Convert data index to value index (accounting for spacers)
@@ -90,12 +97,16 @@ function PickerColumn({
       // Position this value in the middle row
       const targetOffset = (valueIndex + SPACER_COUNT - centerVisibleRow) * ITEM_HEIGHT;
       setScrollOffset(targetOffset);
-      requestAnimationFrame(() => {
-        listRef.current?.scrollTo({
-          y: targetOffset,
-          animated: true,
+
+      // Only scroll if offset is different enough to matter
+      if (Math.abs(targetOffset - offset) > 1) {
+        requestAnimationFrame(() => {
+          listRef.current?.scrollTo({
+            y: targetOffset,
+            animated: true,
+          });
         });
-      });
+      }
 
       if (nextValue !== undefined && nextValue !== safeSelected) {
         onValueChange(nextValue);
@@ -104,8 +115,13 @@ function PickerColumn({
     [onValueChange, safeSelected, values, centerVisibleRow]
   );
 
+  const handleScrollBeginDrag = useCallback(() => {
+    isScrolling.current = true;
+  }, []);
+
   const handleMomentumEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      isScrolling.current = false;
       alignToNearest(event.nativeEvent.contentOffset.y);
     },
     [alignToNearest]
@@ -113,12 +129,18 @@ function PickerColumn({
 
   const handleScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // Check if there's momentum (velocity)
       if (
-        !event.nativeEvent.velocity ||
-        Math.abs(event.nativeEvent.velocity.y) < 0.01
+        event.nativeEvent.velocity &&
+        Math.abs(event.nativeEvent.velocity.y) > 0.1
       ) {
-        alignToNearest(event.nativeEvent.contentOffset.y);
+        // Has momentum, let it continue - don't align yet
+        return;
       }
+
+      // No momentum, align immediately
+      isScrolling.current = false;
+      alignToNearest(event.nativeEvent.contentOffset.y);
     },
     [alignToNearest]
   );
@@ -142,6 +164,7 @@ function PickerColumn({
           showsVerticalScrollIndicator={false}
           snapToInterval={ITEM_HEIGHT}
           decelerationRate="fast"
+          onScrollBeginDrag={handleScrollBeginDrag}
           onMomentumScrollEnd={handleMomentumEnd}
           onScrollEndDrag={handleScrollEndDrag}
           onScroll={handleScroll}
@@ -151,6 +174,7 @@ function PickerColumn({
           nestedScrollEnabled={true}
           removeClippedSubviews={false}
           persistentScrollbar={Platform.OS === 'android'}
+          directionalLockEnabled={true}
         >
           {data.map((item, index) => {
             const itemPosition = index * ITEM_HEIGHT;
