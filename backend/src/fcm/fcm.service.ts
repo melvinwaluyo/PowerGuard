@@ -222,6 +222,10 @@ export class FcmService implements OnModuleInit {
         },
       };
 
+      this.logger.log(
+        `[FCM] Sending multicast message - Title: "${title}", Body: "${body}", Channel: "${channelId}", Data: ${JSON.stringify(data)}, Tokens: ${tokens.length}`
+      );
+
       const response = await admin.messaging().sendEachForMulticast(message);
       this.logger.log(
         `FCM batch notification sent: ${response.successCount}/${tokens.length} succeeded`,

@@ -312,35 +312,52 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           .map(o => o.name || `Outlet ${o.index || o.outletID}`)
           .join(', ');
 
-        const message = `Geofence auto-shutdown: Turned off ${recentlyTurnedOffOutlets.length} outlet${recentlyTurnedOffOutlets.length > 1 ? 's' : ''} (${outletNames})`;
+        const title = 'Geofence Auto-Shutdown';
+        const message = `Turned off ${recentlyTurnedOffOutlets.length} outlet${recentlyTurnedOffOutlets.length > 1 ? 's' : ''} (${outletNames})`;
+        const fullMessage = `${title}: ${message}`;
+
+        console.log(`[Geofence Timer] Preparing notification - Title: "${title}", Message: "${message}"`);
 
         // Create notification log
         await this.prisma.notificationLog.create({
           data: {
             outletID: recentlyTurnedOffOutlets[0].outletID,
-            message
+            message: fullMessage
           }
         });
 
         // Send FCM notification
         const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
+        console.log(`[Geofence Timer] Found ${tokens.length} FCM token(s) for powerstrip ${powerstripID}`);
+
         if (tokens.length > 0) {
-          await this.fcmService.sendToMultipleDevices(
-            tokens,
-            'Geofence Auto-Shutdown',
-            message,
-            {
-              type: 'geofence_timer_completed',
-              outletCount: recentlyTurnedOffOutlets.length.toString(),
-              powerstripId: powerstripID.toString(),
-            },
-            false, // Not critical
-            'app-notifications-v2', // Use same channel as manual timers
-          );
-          console.log(`[FCM] Sent geofence timer completion notification for ${recentlyTurnedOffOutlets.length} outlet(s) to ${tokens.length} device(s)`);
+          try {
+            const result = await this.fcmService.sendToMultipleDevices(
+              tokens,
+              title,
+              message,
+              {
+                type: 'geofence_timer_completed',
+                outletCount: recentlyTurnedOffOutlets.length.toString(),
+                powerstripId: powerstripID.toString(),
+              },
+              false, // Not critical
+              'app-notifications-v2', // Use same channel as manual timers
+            );
+            console.log(`[FCM] ✅ Sent geofence timer completion notification for ${recentlyTurnedOffOutlets.length} outlet(s) to ${tokens.length} device(s)`);
+            if (result) {
+              console.log(`[FCM] Success: ${result.successCount}/${tokens.length}, Failures: ${result.failureCount}`);
+            }
+          } catch (error) {
+            console.error(`[FCM] ❌ Error sending geofence notification:`, error);
+          }
+        } else {
+          console.warn(`[FCM] ⚠️  No FCM tokens found for powerstrip ${powerstripID} - notification not sent`);
         }
 
         console.log(`✅ Geofence consolidated notification created for ${recentlyTurnedOffOutlets.length} outlets`);
+      } else {
+        console.warn(`[Geofence Timer] ⚠️  No outlets found to notify about`);
       }
     } else {
       console.log(`⏳ Waiting for ${remainingGeofenceTimers} more geofence timer(s) to complete before sending notification`);
