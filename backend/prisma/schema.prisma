@@ -19,22 +19,23 @@ model PowerStrip {
 }
 
 model Outlet {
-  outletID      Int               @id @default(autoincrement()) @map("outletid")
-  powerstripID  Int?              @map("powerstripid")
-  index         Int?
-  name          String?
-  state         Boolean?
-  timer         Int?
-  runtime       Int?
-  timerIsActive Boolean?          @map("timerisactive")
-  timerDuration Int?              @map("timerduration")
-  timerEndsAt   DateTime?         @map("timerendsat") @db.Timestamptz(6)
-  timerSource   TimerSource?      @map("timersource")
+  outletID           Int               @id @default(autoincrement()) @map("outletid")
+  powerstripID       Int?              @map("powerstripid")
+  index              Int?
+  name               String?
+  state              Boolean?
+  timer              Int?
+  runtime            Int?
+  lastRuntimeUpdate  DateTime?         @map("lastruntimeupdate") @db.Timestamptz(6)
+  timerIsActive      Boolean?          @map("timerisactive")
+  timerDuration      Int?              @map("timerduration")
+  timerEndsAt        DateTime?         @map("timerendsat") @db.Timestamptz(6)
+  timerSource        TimerSource?      @map("timersource")
   pendingAutoShutdown AutoShutdownRequest[]
-  notifications NotificationLog[]
-  powerStrip    PowerStrip?       @relation(fields: [powerstripID], references: [powerstripID], onDelete: Cascade, onUpdate: NoAction)
-  usageLogs     UsageLog[]
-  timerLogs     TimerLog[]
+  notifications      NotificationLog[]
+  powerStrip         PowerStrip?       @relation(fields: [powerstripID], references: [powerstripID], onDelete: Cascade, onUpdate: NoAction)
+  usageLogs          UsageLog[]
+  timerLogs          TimerLog[]
 
   @@map("outlet")
 }

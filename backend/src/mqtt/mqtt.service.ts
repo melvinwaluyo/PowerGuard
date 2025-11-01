@@ -365,31 +365,43 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Update outlet runtime counter
-   * Called every time we receive power data (every 5 seconds)
-   * Increments runtime by 5 seconds if outlet is ON
+   * Update outlet runtime counter using timestamp-based tracking
+   * Called every time we receive power data (interval-agnostic)
+   * Calculates elapsed time since last update if outlet is ON
    */
   private async updateOutletRuntime(outletId: number) {
     try {
-      // Get current outlet state
+      // Get current outlet state and last update time
       const outlet = await this.prisma.outlet.findUnique({
         where: { outletID: outletId },
-        select: { state: true, runtime: true }
+        select: { state: true, runtime: true, lastRuntimeUpdate: true }
       });
 
       // Only increment runtime if outlet is ON
       if (outlet?.state === true) {
-        const currentRuntime = outlet.runtime ?? 0;
-        const newRuntime = currentRuntime + 5; // Increment by 5 seconds
+        const now = new Date();
+        const lastUpdate = outlet.lastRuntimeUpdate || now;
 
-        await this.prisma.outlet.update({
-          where: { outletID: outletId },
-          data: { runtime: newRuntime }
-        });
+        // Calculate seconds elapsed since last update
+        const secondsElapsed = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
 
-        // Log every minute (when runtime is divisible by 60)
-        if (newRuntime % 60 === 0) {
-          console.log(`⏱️  Outlet ${outletId} runtime: ${Math.floor(newRuntime / 60)} minutes`);
+        // Only update if at least 1 second has passed (prevent duplicate updates)
+        if (secondsElapsed > 0) {
+          const currentRuntime = outlet.runtime ?? 0;
+          const newRuntime = currentRuntime + secondsElapsed;
+
+          await this.prisma.outlet.update({
+            where: { outletID: outletId },
+            data: {
+              runtime: newRuntime,
+              lastRuntimeUpdate: now
+            }
+          });
+
+          // Log every minute (when runtime crosses a minute boundary)
+          if (Math.floor(newRuntime / 60) > Math.floor(currentRuntime / 60)) {
+            console.log(`⏱️  Outlet ${outletId} runtime: ${Math.floor(newRuntime / 60)} minutes`);
+          }
         }
       }
     } catch (error) {
@@ -420,6 +432,10 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       where: { outletID: outletId },
       data: {
         state,
+        // When turning ON, set lastRuntimeUpdate to now (start tracking)
+        ...(state === true && {
+          lastRuntimeUpdate: new Date(),
+        }),
         // Clear timer fields when turning OFF (prevents race condition with UI showing timer on OFF outlet)
         // Reset runtime to 0 when turning OFF (ready for next power-on session)
         ...(state === false && {
@@ -427,6 +443,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           timerEndsAt: null,
           timerSource: null,
           runtime: 0,
+          lastRuntimeUpdate: null,
         }),
       },
     });
