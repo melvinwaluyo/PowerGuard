@@ -78,18 +78,17 @@ const useTimerCountdown = (outlet: Outlet, overrideSeconds?: number | null, over
     // Only reset countdown if:
     // 1. Timer just became active (lastEndsAt was null)
     // 2. Timer endsAt changed (timer restarted)
-    // 3. Large drift detected (>5 seconds difference)
     const currentEndsAt = timer?.endsAt ?? null;
     const shouldReset =
       lastEndsAt === null ||
-      lastEndsAt !== currentEndsAt ||
-      (seconds !== null && Math.abs(seconds - baseSeconds) > 5);
+      lastEndsAt !== currentEndsAt;
 
     if (shouldReset) {
-      setSeconds(baseSeconds);
+      const resetValue = normaliseSeconds(timer?.remainingSeconds, timer?.durationSeconds);
+      setSeconds(resetValue);
       setLastEndsAt(currentEndsAt);
     }
-  }, [overrideIsActive, overrideSeconds, isActive, baseSeconds, timer?.endsAt, lastEndsAt, seconds]);
+  }, [overrideIsActive, overrideSeconds, isActive, timer?.endsAt, lastEndsAt, timer?.remainingSeconds, timer?.durationSeconds]);
 
   useEffect(() => {
     if (overrideIsActive || !isActive) {

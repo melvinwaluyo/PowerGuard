@@ -191,7 +191,7 @@ class MqttSimulator {
     // Publish status updates every 10 seconds
     const statusInterval = setInterval(() => {
       this.publishTimerStatus(outletId);
-    }, 10000);
+    }, 1000);
 
     // Store timer info
     this.timers.set(outletId, {
@@ -276,6 +276,7 @@ class MqttSimulator {
         durationSeconds: timer.duration,
         source: timer.source
       });
+      console.log(`⏱️  [${timer.source}] Timer status: outlet ${outletId} - ${remainingSeconds}s remaining (duration: ${timer.duration}s)`);
     } else if (completedTimerInfo) {
       // Timer just completed - send final status with completion info
       message = JSON.stringify({
@@ -284,6 +285,7 @@ class MqttSimulator {
         durationSeconds: completedTimerInfo.duration, // IMPORTANT: Keep duration for backend detection
         source: completedTimerInfo.source
       });
+      console.log(`✅ [${completedTimerInfo.source}] Timer completed: outlet ${outletId} (duration: ${completedTimerInfo.duration}s)`);
     } else {
       // No timer and no completion info - timer is just inactive
       message = JSON.stringify({
