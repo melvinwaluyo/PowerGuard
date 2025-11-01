@@ -28,22 +28,47 @@ const formatRuntime = (seconds: number | null): string => {
 
 const DEFAULT_TIMER_SECONDS = 15 * 60;
 
-const buildTimerState = (backendOutlet: any, fallbackDefault: number = DEFAULT_TIMER_SECONDS) => {
+const buildTimerState = (
+  backendOutlet: any,
+  fallbackDefault: number = DEFAULT_TIMER_SECONDS,
+  previousTimer?: { isActive: boolean; remainingSeconds: number; endsAt: string | null }
+) => {
   const rawDuration = backendOutlet.timerDuration ?? fallbackDefault;
   const presetSeconds = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : fallbackDefault;
   const endsAtRaw = backendOutlet.timerEndsAt ? new Date(backendOutlet.timerEndsAt) : null;
   const isActive = Boolean(backendOutlet.timerIsActive && endsAtRaw);
-  const remainingSeconds =
-    isActive && endsAtRaw
-      ? Math.max(0, Math.round((endsAtRaw.getTime() - Date.now()) / 1000))
-      : presetSeconds;
+
+  let remainingSeconds: number;
+
+  if (isActive && endsAtRaw) {
+    // Calculate remaining seconds from endsAt
+    const calculatedRemaining = Math.max(0, Math.round((endsAtRaw.getTime() - Date.now()) / 1000));
+
+    // If timer was already active and endsAt hasn't changed, trust the previous countdown
+    // This prevents the timer from jumping when polling happens at different intervals
+    if (
+      previousTimer?.isActive &&
+      previousTimer.endsAt === endsAtRaw.toISOString() &&
+      Math.abs(calculatedRemaining - previousTimer.remainingSeconds) < 10 // Allow up to 10s drift (for polling intervals)
+    ) {
+      // Keep using the local countdown, it's more accurate
+      remainingSeconds = previousTimer.remainingSeconds;
+    } else {
+      // Timer just started or endsAt changed, use calculated value
+      remainingSeconds = calculatedRemaining;
+    }
+  } else {
+    remainingSeconds = presetSeconds;
+  }
 
   if (isActive) {
     console.log(`[OutletContext] buildTimerState for outlet ${backendOutlet.outletID}:`, {
       rawDuration,
       presetSeconds,
       endsAtRaw: endsAtRaw?.toISOString(),
-      remainingSeconds,
+      calculatedRemaining: endsAtRaw ? Math.round((endsAtRaw.getTime() - Date.now()) / 1000) : null,
+      previousRemaining: previousTimer?.remainingSeconds,
+      finalRemaining: remainingSeconds,
       isActive,
     });
   }
@@ -61,11 +86,19 @@ const buildTimerState = (backendOutlet: any, fallbackDefault: number = DEFAULT_T
 };
 
 // Helper function to transform backend outlet data to frontend Outlet type
-const transformOutlet = (backendOutlet: any, fallbackDefault?: number): Outlet => {
+const transformOutlet = (
+  backendOutlet: any,
+  fallbackDefault?: number,
+  previousOutlet?: Outlet
+): Outlet => {
   const latestUsage = backendOutlet.usageLogs?.[0];
   const power = latestUsage?.power || 0;
   const isOn = backendOutlet.state || false;
-  const { timer, presetSeconds } = buildTimerState(backendOutlet, fallbackDefault);
+  const { timer, presetSeconds } = buildTimerState(
+    backendOutlet,
+    fallbackDefault,
+    previousOutlet?.timer
+  );
 
   return {
     id: backendOutlet.outletID,
@@ -108,8 +141,12 @@ export function OutletProvider({ children }: { children: ReactNode }) {
   const refreshOutlets = useCallback(async () => {
     try {
       const data = await api.getOutlets();
-      const transformedOutlets = data.map((outlet) => transformOutlet(outlet, lastTimerDefault));
-      setOutlets(transformedOutlets);
+      setOutlets((prevOutlets) => {
+        return data.map((outlet) => {
+          const previousOutlet = prevOutlets.find((o) => o.id === outlet.outletID);
+          return transformOutlet(outlet, lastTimerDefault, previousOutlet);
+        });
+      });
     } catch (error) {
       console.error('Failed to fetch outlets:', error);
     } finally {
