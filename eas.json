@@ -7,18 +7,27 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "channel": "development"
+      "channel": "development",
+      "android": {
+        "prebuildCommand": "node scripts/setup-google-services.js"
+      }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
         "simulator": false
       },
-      "channel": "preview"
+      "channel": "preview",
+      "android": {
+        "prebuildCommand": "node scripts/setup-google-services.js"
+      }
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "android": {
+        "prebuildCommand": "node scripts/setup-google-services.js"
+      }
     }
   },
   "submit": {
