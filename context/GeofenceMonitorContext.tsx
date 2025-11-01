@@ -296,7 +296,18 @@ const lastTurnedOnOutsideAlertRef = useRef<{ timestamp: number }>({
   const scheduleIntervals = useCallback(() => {
     clearIntervals();
     if (status.countdownIsActive && status.countdownEndsAt) {
-      // Removed countdown interval - remainingSeconds now comes from backend polling
+      // Local countdown interval - decrements remainingSeconds every second
+      countdownIntervalRef.current = setInterval(() => {
+        setStatus((prev) => {
+          if (!prev.countdownIsActive || prev.remainingSeconds <= 0) {
+            return prev;
+          }
+          return {
+            ...prev,
+            remainingSeconds: prev.remainingSeconds - 1,
+          };
+        });
+      }, 1000);
 
       // During countdown, poll location every 5 seconds to detect if user returns home
       // This supplements native geofencing with faster detection during the critical countdown period

@@ -264,32 +264,69 @@ export default function OutletDetailsScreen() {
     geofenceStatus.countdownIsActive &&
     Boolean(geofenceStatus.countdownEndsAt);
 
-  // Sync countdown with timer state - only update when timer changes or becomes inactive
+  // Sync countdown with geofence timer state - only update when timer changes
+  const lastGeofenceEndsAtRef = useRef<string | null>(null);
   useEffect(() => {
-    if (isGeofenceTimerActive) {
-      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
+    if (!isGeofenceTimerActive) {
+      lastGeofenceEndsAtRef.current = null;
+      return;
     }
-  }, [isGeofenceTimerActive, geofenceStatus.remainingSeconds]);
 
+    // Only reset countdown if geofence timer endsAt changed (timer restarted)
+    const currentEndsAt = geofenceStatus.countdownEndsAt?.toString() ?? null;
+    if (lastGeofenceEndsAtRef.current !== currentEndsAt) {
+      console.log('[Timer] Geofence timer started/changed, resetting countdown to:', geofenceStatus.remainingSeconds);
+      setCountdownSeconds(Math.max(0, geofenceStatus.remainingSeconds));
+      lastGeofenceEndsAtRef.current = currentEndsAt;
+    }
+    // Otherwise, let the countdown interval handle it
+  }, [isGeofenceTimerActive, geofenceStatus.countdownEndsAt, geofenceStatus.remainingSeconds]);
+
+  // Sync countdown when timer state changes (only reset when endsAt changes)
+  const lastEndsAtRef = useRef<string | null>(null);
   useEffect(() => {
     if (isGeofenceTimerActive) return;
 
     if (!timerState) {
       // When no timer state exists, show the preset duration
       setCountdownSeconds(timerPresetSeconds);
+      lastEndsAtRef.current = null;
       return;
     }
 
-    // Use remainingSeconds from backend when timer is active
     if (timerState.isActive) {
-      console.log('[Timer] Updating countdown to remainingSeconds:', timerState.remainingSeconds);
-      setCountdownSeconds(timerState.remainingSeconds);
+      // Only reset countdown if timer endsAt changed (timer restarted)
+      const currentEndsAt = timerState.endsAt;
+      if (lastEndsAtRef.current !== currentEndsAt) {
+        console.log('[Timer] Timer started/restarted, resetting countdown to:', timerState.remainingSeconds);
+        setCountdownSeconds(timerState.remainingSeconds);
+        lastEndsAtRef.current = currentEndsAt;
+      }
+      // Otherwise, let the countdown interval handle it
     } else {
       // When timer is not active, show the duration (preset)
-      console.log('[Timer] Updating countdown to durationSeconds:', timerState.durationSeconds);
+      console.log('[Timer] Timer inactive, showing preset:', timerState.durationSeconds);
       setCountdownSeconds(timerState.durationSeconds);
+      lastEndsAtRef.current = null;
     }
   }, [isGeofenceTimerActive, timerState, timerPresetSeconds]);
+
+  // Local countdown interval - runs every second when ANY timer is active
+  useEffect(() => {
+    const isAnyTimerActive = isGeofenceTimerActive || timerState?.isActive;
+
+    if (!isAnyTimerActive) {
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
+      setCountdownSeconds((prev) => {
+        return prev > 0 ? prev - 1 : 0;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isGeofenceTimerActive, timerState?.isActive]);
 
   const handleTimerDurationChange = useCallback(
     async (nextSeconds: number) => {
