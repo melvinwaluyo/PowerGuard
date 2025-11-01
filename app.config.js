@@ -111,8 +111,10 @@ module.exports = {
         }
       ],
       "expo-audio",
+      "expo-asset",
       "@react-native-firebase/app",
-      "./plugins/withAndroidManifestFix"
+      // Adds Gradle task to fix manifest before merge (for EAS Build)
+      "./plugins/withManifestFixGradleTask"
     ],
     experiments: {
       typedRoutes: true,
