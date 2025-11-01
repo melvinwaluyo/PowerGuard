@@ -1,0 +1,135 @@
+module.exports = {
+  expo: {
+    name: "PowerGuard",
+    slug: "PowerGuard",
+    version: "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/icons/adaptive-icon.png",
+    scheme: "powerguard",
+    userInterfaceStyle: "automatic",
+    newArchEnabled: true,
+    splash: {
+      image: "./assets/icons/splash-icon-dark.png",
+      resizeMode: "cover",
+      backgroundColor: "#FFFFFF",
+      dark: {
+        image: "./assets/icons/splash-icon-light.png",
+        resizeMode: "cover",
+        backgroundColor: "#000000"
+      }
+    },
+    ios: {
+      bundleIdentifier: "com.capstonea04.PowerGuard",
+      supportsTablet: true,
+      infoPlist: {
+        NSLocationWhenInUseUsageDescription: "PowerGuard needs your location to set your home address for geofencing features.",
+        NSLocationAlwaysAndWhenInUseUsageDescription: "PowerGuard needs your location in the background to detect when you leave home with outlets still on and automatically shut them down.",
+        NSLocationAlwaysUsageDescription: "PowerGuard needs background location access to detect when you leave home with outlets still on.",
+        ITSAppUsesNonExemptEncryption: false,
+        UIBackgroundModes: ["location", "fetch", "remote-notification"],
+        NSMicrophoneUsageDescription: "PowerGuard needs access to play alert sounds when you leave home with outlets still on."
+      }
+    },
+    android: {
+      adaptiveIcon: {
+        backgroundColor: "#FFFFFF",
+        foregroundImage: "./assets/icons/adaptive-icon.png"
+      },
+      splash: {
+        image: "./assets/icons/splash-icon-dark.png",
+        resizeMode: "cover",
+        backgroundColor: "#FFFFFF",
+        dark: {
+          image: "./assets/icons/splash-icon-light.png",
+          resizeMode: "cover",
+          backgroundColor: "#000000"
+        }
+      },
+      edgeToEdgeEnabled: true,
+      predictiveBackGestureEnabled: false,
+      permissions: [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
+      ],
+      package: "com.capstonea04.PowerGuard",
+      // Use environment variable for EAS builds, fallback to local file for development
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json"
+    },
+    web: {
+      bundler: "metro",
+      output: "static",
+      favicon: "./assets/icons/adaptive-icon.png"
+    },
+    plugins: [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          locationAlwaysAndWhenInUsePermission: "PowerGuard uses geofencing to detect when you leave home with outlets still on and automatically shut them down.",
+          isAndroidBackgroundLocationEnabled: true,
+          isAndroidForegroundServiceEnabled: false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          icon: "./assets/icons/adaptive-icon.png",
+          color: "#0F0E41",
+          sounds: ["./assets/sounds/critical.wav", "./assets/sounds/normal.wav"],
+          mode: "production"
+        }
+      ],
+      [
+        "expo-background-fetch",
+        {
+          android: {
+            minimumIntervalMinutes: 3
+          }
+        }
+      ],
+      "expo-task-manager",
+      [
+        "expo-splash-screen",
+        {
+          image: "./assets/icons/splash-icon-dark.png",
+          resizeMode: "cover",
+          backgroundColor: "#FFFFFF",
+          dark: {
+            image: "./assets/icons/splash-icon-light.png",
+            resizeMode: "cover",
+            backgroundColor: "#000000"
+          }
+        }
+      ],
+      "expo-audio",
+      "@react-native-firebase/app",
+      "./plugins/withAndroidManifestFix"
+    ],
+    experiments: {
+      typedRoutes: true,
+      reactCompiler: true
+    },
+    extra: {
+      router: {},
+      eas: {
+        projectId: "b0fe4763-46db-427e-92f5-a4b73c69fc59"
+      }
+    },
+    owner: "capstonea04",
+    runtimeVersion: {
+      policy: "appVersion"
+    },
+    updates: {
+      url: "https://u.expo.dev/b0fe4763-46db-427e-92f5-a4b73c69fc59"
+    }
+  }
+};
