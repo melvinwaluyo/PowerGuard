@@ -8,7 +8,14 @@ import {
   Query,
   Delete,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiBody, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiParam,
+  ApiBody,
+  ApiQuery,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { OutletsService } from './outlets.service';
 import { MqttService } from '../mqtt/mqtt.service';
 import { TimerService } from '../timer/timer.service';
@@ -24,7 +31,11 @@ export class OutletsController {
 
   @Get()
   @ApiOperation({ summary: 'Get all outlets' })
-  @ApiResponse({ status: 200, description: 'Returns all outlets with their power strips and latest usage data' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns all outlets with their power strips and latest usage data',
+  })
   findAll() {
     return this.outletsService.findAll();
   }
@@ -32,7 +43,10 @@ export class OutletsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a specific outlet by ID' })
   @ApiParam({ name: 'id', type: 'number', description: 'Outlet ID' })
-  @ApiResponse({ status: 200, description: 'Returns outlet details with usage history' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns outlet details with usage history',
+  })
   @ApiResponse({ status: 404, description: 'Outlet not found' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.outletsService.findOne(id);
@@ -46,12 +60,19 @@ export class OutletsController {
     schema: {
       type: 'object',
       properties: {
-        state: { type: 'boolean', example: true, description: 'true = ON, false = OFF' },
+        state: {
+          type: 'boolean',
+          example: true,
+          description: 'true = ON, false = OFF',
+        },
       },
       required: ['state'],
     },
   })
-  @ApiResponse({ status: 200, description: 'Outlet state updated and MQTT command sent' })
+  @ApiResponse({
+    status: 200,
+    description: 'Outlet state updated and MQTT command sent',
+  })
   async updateState(
     @Param('id', ParseIntPipe) id: number,
     @Body('state') state: boolean,
@@ -65,8 +86,16 @@ export class OutletsController {
   @Get(':id/usage-logs')
   @ApiOperation({ summary: 'Get power usage history for an outlet' })
   @ApiParam({ name: 'id', type: 'number', description: 'Outlet ID' })
-  @ApiQuery({ name: 'limit', type: 'number', required: false, description: 'Number of records to return (default: 100)' })
-  @ApiResponse({ status: 200, description: 'Returns usage logs (current, power, energy) ordered by time' })
+  @ApiQuery({
+    name: 'limit',
+    type: 'number',
+    required: false,
+    description: 'Number of records to return (default: 100)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns usage logs (current, power, energy) ordered by time',
+  })
   getUsageLogs(
     @Param('id', ParseIntPipe) id: number,
     @Query('limit', ParseIntPipe) limit: number = 100,
@@ -77,7 +106,10 @@ export class OutletsController {
   @Get(':id/recent-usage')
   @ApiOperation({ summary: 'Get the most recent power usage reading' })
   @ApiParam({ name: 'id', type: 'number', description: 'Outlet ID' })
-  @ApiResponse({ status: 200, description: 'Returns the latest usage data point' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the latest usage data point',
+  })
   getRecentUsage(@Param('id', ParseIntPipe) id: number) {
     return this.outletsService.getRecentUsage(id);
   }
@@ -106,9 +138,22 @@ export class OutletsController {
   @Get(':id/notifications')
   @ApiOperation({ summary: 'Get recent notifications for an outlet' })
   @ApiParam({ name: 'id', type: 'number', description: 'Outlet ID' })
-  @ApiQuery({ name: 'limit', type: 'number', required: false, description: 'Number of notifications to return (default: 10)' })
-  @ApiQuery({ name: 'since', type: 'string', required: false, description: 'ISO timestamp - only return notifications after this time' })
-  @ApiResponse({ status: 200, description: 'Returns notification logs for the outlet' })
+  @ApiQuery({
+    name: 'limit',
+    type: 'number',
+    required: false,
+    description: 'Number of notifications to return (default: 10)',
+  })
+  @ApiQuery({
+    name: 'since',
+    type: 'string',
+    required: false,
+    description: 'ISO timestamp - only return notifications after this time',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns notification logs for the outlet',
+  })
   getNotifications(
     @Param('id', ParseIntPipe) id: number,
     @Query('limit', ParseIntPipe) limit: number = 10,
@@ -120,7 +165,8 @@ export class OutletsController {
   @Delete('usage-logs/clear')
   @ApiOperation({
     summary: 'Clear all usage log data (Development/Testing only)',
-    description: '⚠️ WARNING: This will permanently delete ALL usage data from the database and reset the sequence.'
+    description:
+      '⚠️ WARNING: This will permanently delete ALL usage data from the database and reset the sequence.',
   })
   @ApiResponse({
     status: 200,
@@ -128,9 +174,12 @@ export class OutletsController {
     schema: {
       type: 'object',
       properties: {
-        message: { type: 'string', example: 'All usage data cleared successfully' }
-      }
-    }
+        message: {
+          type: 'string',
+          example: 'All usage data cleared successfully',
+        },
+      },
+    },
   })
   clearAllUsageData() {
     return this.outletsService.clearAllUsageData();

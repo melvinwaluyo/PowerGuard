@@ -30,7 +30,7 @@ export class FcmService implements OnModuleInit {
       if (!projectId || !clientEmail || !privateKey) {
         this.logger.warn(
           'Firebase credentials not provided. FCM notifications will be disabled. ' +
-          'Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in .env'
+            'Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in .env',
         );
         return;
       }
@@ -54,7 +54,12 @@ export class FcmService implements OnModuleInit {
   /**
    * Register FCM token for a device
    */
-  async registerToken(deviceId: string, token: string, platform: string, powerstripId: number = 1) {
+  async registerToken(
+    deviceId: string,
+    token: string,
+    platform: string,
+    powerstripId: number = 1,
+  ) {
     try {
       // Store in database
       await this.prisma.fcmToken.upsert({
@@ -63,17 +68,19 @@ export class FcmService implements OnModuleInit {
           deviceId,
           fcmToken: token,
           platform,
-          powerstripID: powerstripId
+          powerstripID: powerstripId,
         },
         update: {
           fcmToken: token,
           platform,
           powerstripID: powerstripId,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         },
       });
 
-      this.logger.log(`Registered FCM token for device ${deviceId} (${platform}) on powerstrip ${powerstripId}`);
+      this.logger.log(
+        `Registered FCM token for device ${deviceId} (${platform}) on powerstrip ${powerstripId}`,
+      );
 
       return { success: true, message: 'Token registered' };
     } catch (error) {
@@ -117,7 +124,9 @@ export class FcmService implements OnModuleInit {
     }
 
     try {
-      const channelId = customChannelId || (isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v3');
+      const channelId =
+        customChannelId ||
+        (isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v3');
 
       const message: admin.messaging.Message = {
         token,
@@ -185,7 +194,9 @@ export class FcmService implements OnModuleInit {
     }
 
     try {
-      const channelId = customChannelId || (isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v3');
+      const channelId =
+        customChannelId ||
+        (isCritical ? 'critical-alerts-v3' : 'geofence-alerts-v3');
 
       const message: admin.messaging.MulticastMessage = {
         tokens,
@@ -223,7 +234,7 @@ export class FcmService implements OnModuleInit {
       };
 
       this.logger.log(
-        `[FCM] Sending multicast message - Title: "${title}", Body: "${body}", Channel: "${channelId}", Data: ${JSON.stringify(data)}, Tokens: ${tokens.length}`
+        `[FCM] Sending multicast message - Title: "${title}", Body: "${body}", Channel: "${channelId}", Data: ${JSON.stringify(data)}, Tokens: ${tokens.length}`,
       );
 
       const response = await admin.messaging().sendEachForMulticast(message);
@@ -234,7 +245,9 @@ export class FcmService implements OnModuleInit {
       if (response.failureCount > 0) {
         response.responses.forEach((resp, idx) => {
           if (!resp.success) {
-            this.logger.warn(`Failed to send to token ${tokens[idx]}: ${resp.error}`);
+            this.logger.warn(
+              `Failed to send to token ${tokens[idx]}: ${resp.error}`,
+            );
           }
         });
       }
@@ -257,17 +270,20 @@ export class FcmService implements OnModuleInit {
       });
 
       // Deduplicate tokens (in case there are duplicates in DB)
-      const uniqueTokens = [...new Set(tokens.map(t => t.fcmToken))];
+      const uniqueTokens = [...new Set(tokens.map((t) => t.fcmToken))];
 
       if (uniqueTokens.length < tokens.length) {
         this.logger.warn(
-          `Found ${tokens.length - uniqueTokens.length} duplicate FCM tokens for powerstrip ${powerstripId}`
+          `Found ${tokens.length - uniqueTokens.length} duplicate FCM tokens for powerstrip ${powerstripId}`,
         );
       }
 
       return uniqueTokens;
     } catch (error) {
-      this.logger.error(`Failed to get tokens for powerstrip ${powerstripId}:`, error);
+      this.logger.error(
+        `Failed to get tokens for powerstrip ${powerstripId}:`,
+        error,
+      );
       return [];
     }
   }

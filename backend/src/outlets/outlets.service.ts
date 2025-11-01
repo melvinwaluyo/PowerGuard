@@ -10,10 +10,7 @@ export class OutletsService {
     const thirtySecondsAgo = new Date(Date.now() - 30000);
 
     return this.prisma.outlet.findMany({
-      orderBy: [
-        { index: 'asc' },
-        { outletID: 'asc' },
-      ],
+      orderBy: [{ index: 'asc' }, { outletID: 'asc' }],
       include: {
         powerStrip: true,
         usageLogs: {
@@ -129,7 +126,11 @@ export class OutletsService {
    * Get daily usage for a specific month
    * Used for Month tab in reporting
    */
-  async getDailyUsage(powerstripID: number, year: number | null, month: number | null) {
+  async getDailyUsage(
+    powerstripID: number,
+    year: number | null,
+    month: number | null,
+  ) {
     if (year === null || month === null) {
       // Return all historical daily data
       const result = await this.prisma.$queryRaw<
@@ -278,7 +279,8 @@ export class OutletsService {
    * WARNING: This will delete ALL usage data from the database
    */
   async clearAllUsageData() {
-    await this.prisma.$executeRaw`TRUNCATE TABLE usagelog RESTART IDENTITY CASCADE`;
+    await this.prisma
+      .$executeRaw`TRUNCATE TABLE usagelog RESTART IDENTITY CASCADE`;
     return { message: 'All usage data cleared successfully' };
   }
 }

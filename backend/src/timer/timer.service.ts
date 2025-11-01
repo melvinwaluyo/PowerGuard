@@ -95,7 +95,9 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async completeExpiredTimer(outletId: number) {
-    this.logger.log(`Completing expired timer for outlet ${outletId} (fallback)`);
+    this.logger.log(
+      `Completing expired timer for outlet ${outletId} (fallback)`,
+    );
 
     // Get outlet info to check timer source
     const outlet = await this.prisma.outlet.findUnique({
@@ -109,7 +111,9 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!outlet) {
-      this.logger.warn(`Outlet ${outletId} not found when completing expired timer`);
+      this.logger.warn(
+        `Outlet ${outletId} not found when completing expired timer`,
+      );
       return;
     }
 
@@ -121,12 +125,18 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     });
 
     // Turn off the outlet
-    await this.safeTurnOffOutlet(outletId, outlet.timerSource, outlet.powerstripID);
+    await this.safeTurnOffOutlet(
+      outletId,
+      outlet.timerSource,
+      outlet.powerstripID,
+    );
 
     this.logger.log(`Fallback timer completed for outlet ${outletId}`);
   }
 
-  private async shouldStartGeofenceTimer(powerstripID: number): Promise<boolean> {
+  private async shouldStartGeofenceTimer(
+    powerstripID: number,
+  ): Promise<boolean> {
     // Check if there are active outlets on this powerstrip
     const activeOutlets = await this.prisma.outlet.count({
       where: {
@@ -166,7 +176,9 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!outlet.state) {
-      throw new BadRequestException('Timer can only be activated when outlet is ON');
+      throw new BadRequestException(
+        'Timer can only be activated when outlet is ON',
+      );
     }
 
     if (outlet.timerIsActive) {
@@ -194,7 +206,9 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
 
     // Tambahkan cek khusus untuk timer geofencing
     if (options.source === TimerSource.GEOFENCE && outlet.powerstripID) {
-      const shouldStart = await this.shouldStartGeofenceTimer(outlet.powerstripID);
+      const shouldStart = await this.shouldStartGeofenceTimer(
+        outlet.powerstripID,
+      );
       if (!shouldStart) {
         this.logger.log(
           `Geofence timer not started for outlet ${outletId} because no outlets are active`,
@@ -236,7 +250,10 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     return this.buildStatus(outletId, true, durationSeconds, endsAt, source);
   }
 
-  async stopTimer(outletId: number, options: StopTimerOptions = {}): Promise<TimerStatus> {
+  async stopTimer(
+    outletId: number,
+    options: StopTimerOptions = {},
+  ): Promise<TimerStatus> {
     const {
       status = TimerLogStatus.STOPPED,
       note,
@@ -261,12 +278,18 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
 
     if (!outlet.timerIsActive) {
       if (logWhenInactive) {
-        this.logger.warn(`StopTimer called, but no active timer for outlet ${outletId}`);
+        this.logger.warn(
+          `StopTimer called, but no active timer for outlet ${outletId}`,
+        );
       }
       return this.buildStatus(outletId, false, null, null, null);
     }
 
-    if (expectedSource && outlet.timerSource && outlet.timerSource !== expectedSource) {
+    if (
+      expectedSource &&
+      outlet.timerSource &&
+      outlet.timerSource !== expectedSource
+    ) {
       this.logger.warn(
         `StopTimer for outlet ${outletId} ignored because current source is ${outlet.timerSource}, not ${expectedSource}`,
       );
@@ -280,7 +303,10 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     }
 
     const remainingSeconds = outlet.timerEndsAt
-      ? Math.max(0, Math.round((outlet.timerEndsAt.getTime() - Date.now()) / 1000))
+      ? Math.max(
+          0,
+          Math.round((outlet.timerEndsAt.getTime() - Date.now()) / 1000),
+        )
       : 0;
 
     // Send timer stop command to STM32 via MQTT
@@ -312,7 +338,13 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Timer stopped for outlet ${outletId} with status ${status} (source: ${outlet.timerSource ?? 'unknown'})`,
     );
-    return this.buildStatus(outletId, false, outlet.timerDuration ?? null, null, null);
+    return this.buildStatus(
+      outletId,
+      false,
+      outlet.timerDuration ?? null,
+      null,
+      null,
+    );
   }
 
   async getTimerStatus(outletId: number): Promise<TimerStatus> {
@@ -348,9 +380,14 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async updateTimerPreset(outletId: number, durationSeconds: number): Promise<TimerStatus> {
+  async updateTimerPreset(
+    outletId: number,
+    durationSeconds: number,
+  ): Promise<TimerStatus> {
     if (durationSeconds <= 0) {
-      throw new BadRequestException('Timer duration must be greater than zero seconds');
+      throw new BadRequestException(
+        'Timer duration must be greater than zero seconds',
+      );
     }
 
     const outlet = await this.prisma.outlet.findUnique({
@@ -367,7 +404,9 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (outlet.timerIsActive) {
-      throw new BadRequestException('Cannot change duration while timer is running');
+      throw new BadRequestException(
+        'Cannot change duration while timer is running',
+      );
     }
 
     const hasChanged = outlet.timerDuration !== durationSeconds;
@@ -397,7 +436,9 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    this.logger.log(`Timer preset for outlet ${outletId} updated to ${durationSeconds}s`);
+    this.logger.log(
+      `Timer preset for outlet ${outletId} updated to ${durationSeconds}s`,
+    );
     return this.buildStatus(outletId, false, durationSeconds, null, null);
   }
 
@@ -411,10 +452,12 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async fulfillGeofenceAutoShutdown(outletId: number, powerstripID: number | null) {
+  async fulfillGeofenceAutoShutdown(
+    outletId: number,
+    powerstripID: number | null,
+  ) {
     await this.safeTurnOffOutlet(outletId, TimerSource.GEOFENCE, powerstripID);
   }
-
 
   private async getOutletName(outletId: number): Promise<string> {
     const outlet = await this.prisma.outlet.findUnique({
@@ -427,7 +470,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
   private async safeTurnOffOutlet(
     outletId: number,
     source: TimerSource | null,
-    powerstripID: number | null
+    powerstripID: number | null,
   ) {
     try {
       // If timer originated from geofencing and has powerstripID
@@ -456,7 +499,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
             },
           });
           this.logger.log(
-            `Geofence timer completed: no active outlets for powerstrip ${powerstripID}`
+            `Geofence timer completed: no active outlets for powerstrip ${powerstripID}`,
           );
           return;
         }
@@ -480,7 +523,9 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
         });
 
         await Promise.all(
-          activeOutlets.map((outlet) => this.mqttService.controlOutlet(outlet.outletID, false)),
+          activeOutlets.map((outlet) =>
+            this.mqttService.controlOutlet(outlet.outletID, false),
+          ),
         );
 
         // Record ONE notification for ALL outlets (not per outlet)
@@ -507,7 +552,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
         });
 
         this.logger.log(
-          `Geofence timer completed: ${activeOutlets.length} outlet(s) turned off for powerstrip ${powerstripID}`
+          `Geofence timer completed: ${activeOutlets.length} outlet(s) turned off for powerstrip ${powerstripID}`,
         );
       } else {
         // Logic for non-geofencing timer remains the same
@@ -518,7 +563,7 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
       const err = error as Error;
       this.logger.error(
         `Failed to turn off outlet ${outletId} after timer completed: ${err.message}`,
-        err.stack
+        err.stack,
       );
       await this.prisma.timerLog.create({
         data: {
@@ -530,7 +575,6 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-
   private buildStatus(
     outletId: number,
     isActive: boolean,
@@ -539,7 +583,9 @@ export class TimerService implements OnModuleInit, OnModuleDestroy {
     source: TimerSource | null,
   ): TimerStatus {
     const remainingSeconds =
-      isActive && endsAt ? Math.max(0, Math.round((endsAt.getTime() - Date.now()) / 1000)) : 0;
+      isActive && endsAt
+        ? Math.max(0, Math.round((endsAt.getTime() - Date.now()) / 1000))
+        : 0;
 
     return {
       outletId,

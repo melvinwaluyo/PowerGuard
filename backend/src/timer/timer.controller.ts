@@ -7,7 +7,14 @@ import {
   Body,
   Query,
 } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { TimerService } from './timer.service';
 import { StartTimerDto } from './dto/start-timer.dto';
 import { UpdateTimerPresetDto } from './dto/update-timer-preset.dto';
@@ -64,7 +71,12 @@ export class TimerController {
   @Get('logs')
   @ApiOperation({ summary: 'Get timer log history for outlet' })
   @ApiParam({ name: 'outletId', type: 'number', description: 'Outlet ID' })
-  @ApiQuery({ name: 'limit', type: 'number', required: false, description: 'Number of logs (default 20)' })
+  @ApiQuery({
+    name: 'limit',
+    type: 'number',
+    required: false,
+    description: 'Number of logs (default 20)',
+  })
   @ApiResponse({ status: 200, description: 'Returns timer logs' })
   getLogs(
     @Param('outletId', ParseIntPipe) outletId: number,
@@ -72,7 +84,9 @@ export class TimerController {
   ) {
     const rawLimit = limit !== undefined ? Number(limit) : 20;
     const safeLimit =
-      Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.trunc(rawLimit), 100) : 20;
+      Number.isFinite(rawLimit) && rawLimit > 0
+        ? Math.min(Math.trunc(rawLimit), 100)
+        : 20;
     return this.timerService.getTimerLogs(outletId, safeLimit);
   }
 }

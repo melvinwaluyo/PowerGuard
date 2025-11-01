@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { AutoShutdownStatus, GeofenceZone, TimerLogStatus, TimerSource } from '@prisma/client';
+import {
+  AutoShutdownStatus,
+  GeofenceZone,
+  TimerLogStatus,
+  TimerSource,
+} from '@prisma/client';
 import { TimerService } from '../timer/timer.service';
 import { FcmService } from '../fcm/fcm.service';
 
@@ -41,11 +46,14 @@ export class GeofenceAutomationService {
   /**
    * Calculate remaining seconds until countdown ends
    */
-  private calculateRemainingSeconds(countdownEndsAt: Date | string | null): number {
+  private calculateRemainingSeconds(
+    countdownEndsAt: Date | string | null,
+  ): number {
     if (!countdownEndsAt) return 0;
-    const endsAtTime = countdownEndsAt instanceof Date
-      ? countdownEndsAt.getTime()
-      : new Date(countdownEndsAt).getTime();
+    const endsAtTime =
+      countdownEndsAt instanceof Date
+        ? countdownEndsAt.getTime()
+        : new Date(countdownEndsAt).getTime();
     return Math.max(0, Math.round((endsAtTime - Date.now()) / 1000));
   }
 
@@ -57,7 +65,12 @@ export class GeofenceAutomationService {
       where: { powerstripID },
     });
 
-    if (!settings || !settings.isEnabled || settings.latitude == null || settings.longitude == null) {
+    if (
+      !settings ||
+      !settings.isEnabled ||
+      settings.latitude == null ||
+      settings.longitude == null
+    ) {
       return {
         zone: GeofenceZone.INSIDE,
         distanceMeters: 0,
@@ -82,7 +95,9 @@ export class GeofenceAutomationService {
           requestId: pendingRequest.requestID,
           outletId: pendingRequest.outletID,
           initiatedAt: pendingRequest.initiatedAt.toISOString(),
-          expiresAt: pendingRequest.expiresAt ? pendingRequest.expiresAt.toISOString() : null,
+          expiresAt: pendingRequest.expiresAt
+            ? pendingRequest.expiresAt.toISOString()
+            : null,
         }
       : null;
 
@@ -94,8 +109,10 @@ export class GeofenceAutomationService {
     );
 
     const radius = settings.radius ?? 1500;
-    const zone = distanceMeters > radius ? GeofenceZone.OUTSIDE : GeofenceZone.INSIDE;
-    const autoShutdownSeconds = settings.autoShutdownTime ?? DEFAULT_AUTO_SHUTDOWN;
+    const zone =
+      distanceMeters > radius ? GeofenceZone.OUTSIDE : GeofenceZone.INSIDE;
+    const autoShutdownSeconds =
+      settings.autoShutdownTime ?? DEFAULT_AUTO_SHUTDOWN;
 
     const previousZone = settings.lastStatus ?? GeofenceZone.INSIDE;
     const countdownIsActive = Boolean(settings.countdownIsActive);
@@ -129,7 +146,9 @@ export class GeofenceAutomationService {
 
       if (!countdownIsActive || previousZone !== GeofenceZone.OUTSIDE) {
         const now = new Date();
-        const countdownEndsAtDate = new Date(now.getTime() + autoShutdownSeconds * 1000);
+        const countdownEndsAtDate = new Date(
+          now.getTime() + autoShutdownSeconds * 1000,
+        );
         const countdownEndsAtIso = countdownEndsAtDate.toISOString();
         const outlets = await this.prisma.outlet.findMany({
           where: {
@@ -193,7 +212,8 @@ export class GeofenceAutomationService {
             distanceMeters,
             countdownIsActive: true,
             countdownEndsAt: countdownEndsAtIso,
-            remainingSeconds: this.calculateRemainingSeconds(countdownEndsAtDate),
+            remainingSeconds:
+              this.calculateRemainingSeconds(countdownEndsAtDate),
             autoShutdownSeconds,
             triggeredOutlets: [],
             pendingRequest: serializedPending,
@@ -206,21 +226,25 @@ export class GeofenceAutomationService {
             // Double-check outlet is still ON before starting timer (prevents race conditions)
             const currentState = await this.prisma.outlet.findUnique({
               where: { outletID: outlet.outletID },
-              select: { state: true }
+              select: { state: true },
             });
 
             if (!currentState?.state) {
               this.logger.warn(
-                `Skipping geofence timer for outlet ${outlet.outletID}: outlet is OFF`
+                `Skipping geofence timer for outlet ${outlet.outletID}: outlet is OFF`,
               );
               continue;
             }
 
-            await this.timerService.startTimer(outlet.outletID, autoShutdownSeconds, {
-              source: TimerSource.GEOFENCE,
-              note: 'Geofence timer started (left radius)',
-              allowReplace: outlet.timerSource === TimerSource.GEOFENCE,
-            });
+            await this.timerService.startTimer(
+              outlet.outletID,
+              autoShutdownSeconds,
+              {
+                source: TimerSource.GEOFENCE,
+                note: 'Geofence timer started (left radius)',
+                allowReplace: outlet.timerSource === TimerSource.GEOFENCE,
+              },
+            );
             triggeredOutlets.push(outlet.outletID);
           } catch (error) {
             this.logger.warn(
@@ -232,11 +256,13 @@ export class GeofenceAutomationService {
         // Send FCM notification based on scenario
         // Note: This only executes once due to the atomic update lock above
         if (triggeredOutlets.length > 0) {
-          const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
+          const tokens =
+            await this.fcmService.getTokensForPowerstrip(powerstripID);
           if (tokens.length > 0) {
             const minutes = Math.floor(autoShutdownSeconds / 60);
             const seconds = autoShutdownSeconds % 60;
-            const timerText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+            const timerText =
+              minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
             // Differentiate between leaving zone vs turning on while outside
             const justLeftZone = previousZone !== GeofenceZone.OUTSIDE;
@@ -269,7 +295,9 @@ export class GeofenceAutomationService {
               },
               isCritical,
             );
-            this.logger.log(`[FCM] Sent ${isCritical ? 'CRITICAL' : 'standard'} geofence notification (${notificationType}) to ${tokens.length} device(s)`);
+            this.logger.log(
+              `[FCM] Sent ${isCritical ? 'CRITICAL' : 'standard'} geofence notification (${notificationType}) to ${tokens.length} device(s)`,
+            );
 
             // Log the notification for audit trail
             await this.prisma.notificationLog.create({
@@ -339,8 +367,12 @@ export class GeofenceAutomationService {
         zone,
         distanceMeters,
         countdownIsActive: true,
-        countdownEndsAt: settings.countdownEndsAt ? settings.countdownEndsAt.toISOString() : null,
-        remainingSeconds: this.calculateRemainingSeconds(settings.countdownEndsAt),
+        countdownEndsAt: settings.countdownEndsAt
+          ? settings.countdownEndsAt.toISOString()
+          : null,
+        remainingSeconds: this.calculateRemainingSeconds(
+          settings.countdownEndsAt,
+        ),
         autoShutdownSeconds,
         triggeredOutlets,
         pendingRequest: serializedPending,
@@ -384,11 +416,13 @@ export class GeofenceAutomationService {
       });
 
       if (outlets.length) {
-        const message = 'Auto-shutdown cancelled: You returned to safe location.';
+        const message =
+          'Auto-shutdown cancelled: You returned to safe location.';
         await this.createNotification(outlets[0].outletID, message);
 
         // Send FCM notification for cancelled geofence countdown
-        const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
+        const tokens =
+          await this.fcmService.getTokensForPowerstrip(powerstripID);
         if (tokens.length > 0) {
           await this.fcmService.sendToMultipleDevices(
             tokens,
@@ -400,7 +434,9 @@ export class GeofenceAutomationService {
             },
             false, // Not critical
           );
-          this.logger.log(`[FCM] Sent geofence cancellation notification to ${tokens.length} device(s)`);
+          this.logger.log(
+            `[FCM] Sent geofence cancellation notification to ${tokens.length} device(s)`,
+          );
         }
       }
     } else if (previousZone !== GeofenceZone.INSIDE) {
@@ -420,9 +456,7 @@ export class GeofenceAutomationService {
       remainingSeconds: 0,
       autoShutdownSeconds,
       triggeredOutlets,
-      pendingRequest: pendingRequest
-        ? serializedPending
-        : null,
+      pendingRequest: pendingRequest ? serializedPending : null,
     };
   }
 
@@ -466,7 +500,9 @@ export class GeofenceAutomationService {
 
     if (recentNotification) {
       const timeSince = recentNotification.createdAt
-        ? Math.round((Date.now() - recentNotification.createdAt.getTime()) / 1000)
+        ? Math.round(
+            (Date.now() - recentNotification.createdAt.getTime()) / 1000,
+          )
         : 0;
 
       this.logger.log(
@@ -482,6 +518,8 @@ export class GeofenceAutomationService {
       },
     });
 
-    this.logger.log(`Created notification for outlet ${outletId}: "${message}"`);
+    this.logger.log(
+      `Created notification for outlet ${outletId}: "${message}"`,
+    );
   }
 }

@@ -1,5 +1,20 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiBody, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiParam,
+  ApiBody,
+  ApiResponse,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { PowerstripsService } from './powerstrips.service';
 import { OutletsService } from '../outlets/outlets.service';
 
@@ -13,7 +28,11 @@ export class PowerstripsController {
 
   @Get()
   @ApiOperation({ summary: 'Get all power strips' })
-  @ApiResponse({ status: 200, description: 'Returns all power strips with their outlets and geofence settings' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns all power strips with their outlets and geofence settings',
+  })
   findAll() {
     return this.powerstripsService.findAll();
   }
@@ -21,7 +40,10 @@ export class PowerstripsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a specific power strip by ID' })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
-  @ApiResponse({ status: 200, description: 'Returns power strip details with outlets' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns power strip details with outlets',
+  })
   @ApiResponse({ status: 404, description: 'Power strip not found' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.powerstripsService.findOne(id);
@@ -47,9 +69,16 @@ export class PowerstripsController {
   // Usage Aggregation Endpoints for Reporting Charts
 
   @Get(':id/usage/hourly')
-  @ApiOperation({ summary: 'Get hourly usage for the last 24 hours (for Day tab)' })
+  @ApiOperation({
+    summary: 'Get hourly usage for the last 24 hours (for Day tab)',
+  })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
-  @ApiQuery({ name: 'all', type: 'boolean', required: false, description: 'Fetch all historical data instead of just last 24 hours' })
+  @ApiQuery({
+    name: 'all',
+    type: 'boolean',
+    required: false,
+    description: 'Fetch all historical data instead of just last 24 hours',
+  })
   @ApiResponse({
     status: 200,
     description: 'Returns hourly aggregated energy usage',
@@ -73,14 +102,32 @@ export class PowerstripsController {
   }
 
   @Get(':id/usage/daily')
-  @ApiOperation({ summary: 'Get daily usage for a specific month (for Month tab)' })
+  @ApiOperation({
+    summary: 'Get daily usage for a specific month (for Month tab)',
+  })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
-  @ApiQuery({ name: 'year', type: 'number', required: false, description: 'Year (defaults to current year)' })
-  @ApiQuery({ name: 'month', type: 'number', required: false, description: 'Month 1-12 (defaults to current month)' })
-  @ApiQuery({ name: 'all', type: 'boolean', required: false, description: 'Fetch all historical data instead of specific month' })
+  @ApiQuery({
+    name: 'year',
+    type: 'number',
+    required: false,
+    description: 'Year (defaults to current year)',
+  })
+  @ApiQuery({
+    name: 'month',
+    type: 'number',
+    required: false,
+    description: 'Month 1-12 (defaults to current month)',
+  })
+  @ApiQuery({
+    name: 'all',
+    type: 'boolean',
+    required: false,
+    description: 'Fetch all historical data instead of specific month',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Returns daily aggregated energy usage for the specified month',
+    description:
+      'Returns daily aggregated energy usage for the specified month',
     schema: {
       type: 'array',
       items: {
@@ -109,13 +156,26 @@ export class PowerstripsController {
   }
 
   @Get(':id/usage/monthly')
-  @ApiOperation({ summary: 'Get monthly usage for a specific year (for Year tab)' })
+  @ApiOperation({
+    summary: 'Get monthly usage for a specific year (for Year tab)',
+  })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
-  @ApiQuery({ name: 'year', type: 'number', required: false, description: 'Year (defaults to current year)' })
-  @ApiQuery({ name: 'all', type: 'boolean', required: false, description: 'Fetch all historical data instead of specific year' })
+  @ApiQuery({
+    name: 'year',
+    type: 'number',
+    required: false,
+    description: 'Year (defaults to current year)',
+  })
+  @ApiQuery({
+    name: 'all',
+    type: 'boolean',
+    required: false,
+    description: 'Fetch all historical data instead of specific year',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Returns monthly aggregated energy usage for the specified year',
+    description:
+      'Returns monthly aggregated energy usage for the specified year',
     schema: {
       type: 'array',
       items: {
@@ -141,7 +201,9 @@ export class PowerstripsController {
   }
 
   @Get(':id/usage/past30days')
-  @ApiOperation({ summary: 'Get daily usage for past 30 days (for Past 30 Days stat card)' })
+  @ApiOperation({
+    summary: 'Get daily usage for past 30 days (for Past 30 Days stat card)',
+  })
   @ApiParam({ name: 'id', type: 'number', description: 'Power strip ID' })
   @ApiResponse({
     status: 200,

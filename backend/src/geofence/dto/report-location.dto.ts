@@ -10,7 +10,11 @@ export class ReportLocationDto {
   @IsLongitude()
   longitude: number;
 
-  @ApiProperty({ description: 'Akurasi lokasi dalam meter', required: false, example: 25 })
+  @ApiProperty({
+    description: 'Akurasi lokasi dalam meter',
+    required: false,
+    example: 25,
+  })
   @IsOptional()
   @IsNumber()
   accuracy?: number;

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AutoShutdownStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { TimerService } from '../timer/timer.service';
@@ -72,7 +76,10 @@ export class AutoShutdownService {
       }
     });
 
-    await this.timerService.fulfillGeofenceAutoShutdown(request.outletID, request.powerstripID);
+    await this.timerService.fulfillGeofenceAutoShutdown(
+      request.outletID,
+      request.powerstripID,
+    );
 
     return { success: true };
   }

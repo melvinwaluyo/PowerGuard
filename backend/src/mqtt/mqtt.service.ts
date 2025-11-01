@@ -84,14 +84,27 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         const current = typeof data.current === 'number' ? data.current : null;
         const power = typeof data.power === 'number' ? data.power : null;
         const energy = typeof data.energy === 'number' ? data.energy : null;
+        const state = typeof data.state === 'boolean' ? data.state : null;
+
+        // Handle state sync from physical button press
+        if (state !== null) {
+          await this.syncOutletStateFromHardware(outletId, state);
+        }
 
         // Update runtime for this outlet (if it's ON)
         await this.updateOutletRuntime(outletId);
 
         // Skip storing if any value is null or if power is 0 (outlet is OFF or incomplete data)
         // This prevents database flooding with useless or incomplete entries
-        if (current === null || power === null || energy === null || power === 0) {
-          console.log(`Skipped storing for outlet ${outletId} (current: ${current}A, power: ${power}W, energy: ${energy}Wh - incomplete or zero data)`);
+        if (
+          current === null ||
+          power === null ||
+          energy === null ||
+          power === 0
+        ) {
+          console.log(
+            `Skipped storing for outlet ${outletId} (current: ${current}A, power: ${power}W, energy: ${energy}Wh - incomplete or zero data)`,
+          );
           return;
         }
 
@@ -105,11 +118,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           },
         });
 
-        console.log(`Stored usage data for outlet ${outletId}: ${power}W, ${current}A`);
+        console.log(
+          `Stored usage data for outlet ${outletId}: ${power}W, ${current}A`,
+        );
       }
 
       // Handle timer status: powerguard/{outlet_id}/timer/status
-      if (parts[0] === 'powerguard' && parts[2] === 'timer' && parts[3] === 'status') {
+      if (
+        parts[0] === 'powerguard' &&
+        parts[2] === 'timer' &&
+        parts[3] === 'status'
+      ) {
         const outletId = parseInt(parts[1]);
         await this.handleTimerStatus(outletId, data);
       }
@@ -120,8 +139,10 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
   private async handleTimerStatus(outletId: number, data: any) {
     const isActive = data.isActive === true;
-    const remainingSeconds = typeof data.remainingSeconds === 'number' ? data.remainingSeconds : 0;
-    const durationSeconds = typeof data.durationSeconds === 'number' ? data.durationSeconds : 0;
+    const remainingSeconds =
+      typeof data.remainingSeconds === 'number' ? data.remainingSeconds : 0;
+    const durationSeconds =
+      typeof data.durationSeconds === 'number' ? data.durationSeconds : 0;
     const source = data.source || null;
 
     console.log(`[MQTT] Timer status received for outlet ${outletId}:`, {
@@ -129,7 +150,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       remainingSeconds,
       durationSeconds,
       source,
-      rawData: data
+      rawData: data,
     });
 
     // Get current outlet state to detect timer completion
@@ -142,8 +163,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         timerEndsAt: true,
         name: true,
         index: true,
-        powerstripID: true
-      }
+        powerstripID: true,
+      },
     });
 
     // Detect timer completion (was active, now inactive with 0 remaining)
@@ -160,8 +181,10 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     if (isActive && remainingSeconds > 0) {
       if (!currentOutlet?.timerIsActive || !currentOutlet?.timerEndsAt) {
         // Timer is newly starting, calculate endsAt
-        timerEndsAt = new Date(Date.now() + (remainingSeconds * 1000));
-        console.log(`Timer starting for outlet ${outletId}: endsAt=${timerEndsAt.toISOString()}`);
+        timerEndsAt = new Date(Date.now() + remainingSeconds * 1000);
+        console.log(
+          `Timer starting for outlet ${outletId}: endsAt=${timerEndsAt.toISOString()}`,
+        );
       } else {
         // Timer already active, keep existing endsAt to prevent drift
         timerEndsAt = currentOutlet.timerEndsAt;
@@ -177,7 +200,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         timerEndsAt,
         timerSource: source,
         // If timer just completed, also update outlet state to OFF
-        ...(timerJustCompleted && { state: false })
+        ...(timerJustCompleted && { state: false }),
       },
     });
 
@@ -191,8 +214,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           durationSeconds: currentOutlet?.timerDuration ?? undefined,
           remainingSeconds: 0,
           note: 'Timer completed and outlet turned off automatically',
-          source: currentOutlet?.timerSource ?? null
-        }
+          source: currentOutlet?.timerSource ?? null,
+        },
       });
 
       // Handle notifications based on timer source
@@ -201,7 +224,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         await this.handleGeofenceTimerCompletion(outletId, currentOutlet);
       } else {
         // For MANUAL timers, create individual notification
-        const outletName = currentOutlet?.name || `Outlet ${currentOutlet?.index || outletId}`;
+        const outletName =
+          currentOutlet?.name || `Outlet ${currentOutlet?.index || outletId}`;
         const totalSeconds = currentOutlet?.timerDuration ?? durationSeconds;
 
         // Format duration based on length
@@ -211,15 +235,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         } else if (totalSeconds < 3600) {
           const minutes = Math.floor(totalSeconds / 60);
           const seconds = totalSeconds % 60;
-          durationText = seconds > 0
-            ? `${minutes} minute(s) ${seconds} second(s)`
-            : `${minutes} minute(s)`;
+          durationText =
+            seconds > 0
+              ? `${minutes} minute(s) ${seconds} second(s)`
+              : `${minutes} minute(s)`;
         } else {
           const hours = Math.floor(totalSeconds / 3600);
           const minutes = Math.floor((totalSeconds % 3600) / 60);
-          durationText = minutes > 0
-            ? `${hours} hour(s) ${minutes} minute(s)`
-            : `${hours} hour(s)`;
+          durationText =
+            minutes > 0
+              ? `${hours} hour(s) ${minutes} minute(s)`
+              : `${hours} hour(s)`;
         }
 
         const message = `Timer completed: ${outletName} turned off after ${durationText}`;
@@ -227,18 +253,20 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         await this.prisma.notificationLog.create({
           data: {
             outletID: outletId,
-            message
-          }
+            message,
+          },
         });
 
         // Send FCM notification for manual timer completion
         const outlet = await this.prisma.outlet.findUnique({
           where: { outletID: outletId },
-          select: { powerstripID: true }
+          select: { powerstripID: true },
         });
 
         if (outlet?.powerstripID) {
-          const tokens = await this.fcmService.getTokensForPowerstrip(outlet.powerstripID);
+          const tokens = await this.fcmService.getTokensForPowerstrip(
+            outlet.powerstripID,
+          );
           if (tokens.length > 0) {
             await this.fcmService.sendToMultipleDevices(
               tokens,
@@ -252,16 +280,23 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
               false, // Not critical
               'app-notifications-v2', // Use app notifications channel
             );
-            console.log(`[FCM] Sent manual timer completion notification to ${tokens.length} device(s)`);
+            console.log(
+              `[FCM] Sent manual timer completion notification to ${tokens.length} device(s)`,
+            );
           }
         }
       }
 
-      console.log(`✅ Timer completed for outlet ${outletId} - state updated, logs created`);
+      console.log(
+        `✅ Timer completed for outlet ${outletId} - state updated, logs created`,
+      );
     }
   }
 
-  private async handleGeofenceTimerCompletion(outletId: number, currentOutlet: any) {
+  private async handleGeofenceTimerCompletion(
+    outletId: number,
+    currentOutlet: any,
+  ) {
     const powerstripID = currentOutlet.powerstripID;
     if (!powerstripID) return;
 
@@ -271,13 +306,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         powerstripID,
         timerIsActive: true,
         timerSource: 'GEOFENCE',
-        outletID: { not: outletId } // Exclude current outlet (already marked inactive)
-      }
+        outletID: { not: outletId }, // Exclude current outlet (already marked inactive)
+      },
     });
 
     // Log total geofence timers (including the one that just completed)
     const totalGeofenceTimersBefore = remainingGeofenceTimers + 1;
-    console.log(`[Geofence Timer] Outlet ${outletId} completed. Total geofence timers that were active: ${totalGeofenceTimersBefore}, Remaining: ${remainingGeofenceTimers}`);
+    console.log(
+      `[Geofence Timer] Outlet ${outletId} completed. Total geofence timers that were active: ${totalGeofenceTimersBefore}, Remaining: ${remainingGeofenceTimers}`,
+    );
 
     // Only send notification when this is the LAST geofence timer to complete
     if (remainingGeofenceTimers === 0) {
@@ -292,43 +329,52 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
               status: 'COMPLETED',
               source: 'GEOFENCE',
               triggeredAt: {
-                gte: new Date(Date.now() - 180000) // Within last 3 minutes
-              }
-            }
-          }
+                gte: new Date(Date.now() - 180000), // Within last 3 minutes
+              },
+            },
+          },
         },
         select: {
           outletID: true,
           name: true,
-          index: true
-        }
+          index: true,
+        },
       });
 
-      console.log(`[Geofence Timer] Found ${recentlyTurnedOffOutlets.length} outlets that were turned off by geofence:`,
-        recentlyTurnedOffOutlets.map(o => `${o.outletID} (${o.name || 'Outlet ' + o.index})`));
+      console.log(
+        `[Geofence Timer] Found ${recentlyTurnedOffOutlets.length} outlets that were turned off by geofence:`,
+        recentlyTurnedOffOutlets.map(
+          (o) => `${o.outletID} (${o.name || 'Outlet ' + o.index})`,
+        ),
+      );
 
       if (recentlyTurnedOffOutlets.length > 0) {
         const outletNames = recentlyTurnedOffOutlets
-          .map(o => o.name || `Outlet ${o.index || o.outletID}`)
+          .map((o) => o.name || `Outlet ${o.index || o.outletID}`)
           .join(', ');
 
         const title = 'Geofence Auto-Shutdown';
         const message = `Turned off ${recentlyTurnedOffOutlets.length} outlet${recentlyTurnedOffOutlets.length > 1 ? 's' : ''} (${outletNames})`;
         const fullMessage = `${title}: ${message}`;
 
-        console.log(`[Geofence Timer] Preparing notification - Title: "${title}", Message: "${message}"`);
+        console.log(
+          `[Geofence Timer] Preparing notification - Title: "${title}", Message: "${message}"`,
+        );
 
         // Create notification log
         await this.prisma.notificationLog.create({
           data: {
             outletID: recentlyTurnedOffOutlets[0].outletID,
-            message: fullMessage
-          }
+            message: fullMessage,
+          },
         });
 
         // Send FCM notification
-        const tokens = await this.fcmService.getTokensForPowerstrip(powerstripID);
-        console.log(`[Geofence Timer] Found ${tokens.length} FCM token(s) for powerstrip ${powerstripID}`);
+        const tokens =
+          await this.fcmService.getTokensForPowerstrip(powerstripID);
+        console.log(
+          `[Geofence Timer] Found ${tokens.length} FCM token(s) for powerstrip ${powerstripID}`,
+        );
 
         if (tokens.length > 0) {
           try {
@@ -344,23 +390,142 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
               false, // Not critical
               'app-notifications-v2', // Use same channel as manual timers
             );
-            console.log(`[FCM] ✅ Sent geofence timer completion notification for ${recentlyTurnedOffOutlets.length} outlet(s) to ${tokens.length} device(s)`);
+            console.log(
+              `[FCM] ✅ Sent geofence timer completion notification for ${recentlyTurnedOffOutlets.length} outlet(s) to ${tokens.length} device(s)`,
+            );
             if (result) {
-              console.log(`[FCM] Success: ${result.successCount}/${tokens.length}, Failures: ${result.failureCount}`);
+              console.log(
+                `[FCM] Success: ${result.successCount}/${tokens.length}, Failures: ${result.failureCount}`,
+              );
             }
           } catch (error) {
-            console.error(`[FCM] ❌ Error sending geofence notification:`, error);
+            console.error(
+              `[FCM] ❌ Error sending geofence notification:`,
+              error,
+            );
           }
         } else {
-          console.warn(`[FCM] ⚠️  No FCM tokens found for powerstrip ${powerstripID} - notification not sent`);
+          console.warn(
+            `[FCM] ⚠️  No FCM tokens found for powerstrip ${powerstripID} - notification not sent`,
+          );
         }
 
-        console.log(`✅ Geofence consolidated notification created for ${recentlyTurnedOffOutlets.length} outlets`);
+        console.log(
+          `✅ Geofence consolidated notification created for ${recentlyTurnedOffOutlets.length} outlets`,
+        );
       } else {
         console.warn(`[Geofence Timer] ⚠️  No outlets found to notify about`);
       }
     } else {
-      console.log(`⏳ Waiting for ${remainingGeofenceTimers} more geofence timer(s) to complete before sending notification`);
+      console.log(
+        `⏳ Waiting for ${remainingGeofenceTimers} more geofence timer(s) to complete before sending notification`,
+      );
+    }
+  }
+
+  /**
+   * Synchronize outlet state when physical button is pressed on STM32
+   * Handles state changes initiated by hardware, not by app
+   * Cancels timers if outlet is turned OFF physically
+   */
+  private async syncOutletStateFromHardware(
+    outletId: number,
+    newState: boolean,
+  ) {
+    try {
+      // Get current outlet state from database
+      const outlet = await this.prisma.outlet.findUnique({
+        where: { outletID: outletId },
+        select: {
+          state: true,
+          timerIsActive: true,
+          timerDuration: true,
+          timerSource: true,
+          timerEndsAt: true,
+          name: true,
+          index: true,
+        },
+      });
+
+      if (!outlet) {
+        console.error(`Outlet ${outletId} not found in database`);
+        return;
+      }
+
+      // Check if state has changed
+      if (outlet.state === newState) {
+        // State unchanged, no action needed
+        return;
+      }
+
+      console.log(
+        `🔘 Physical button pressed: Outlet ${outletId} ${newState ? 'ON' : 'OFF'} (was ${outlet.state ? 'ON' : 'OFF'})`,
+      );
+
+      // Determine if timer needs to be cancelled
+      const shouldCancelTimer = !newState && outlet.timerIsActive === true;
+
+      // Update outlet state in database
+      const updateData: any = {
+        state: newState,
+      };
+
+      // If turning ON, initialize runtime tracking
+      if (newState === true) {
+        updateData.lastRuntimeUpdate = new Date();
+      }
+
+      // If turning OFF, reset runtime and clear timer if active
+      if (newState === false) {
+        updateData.runtime = 0;
+        updateData.lastRuntimeUpdate = null;
+
+        if (shouldCancelTimer) {
+          updateData.timerIsActive = false;
+          updateData.timerEndsAt = null;
+          updateData.timerSource = null;
+        }
+      }
+
+      await this.prisma.outlet.update({
+        where: { outletID: outletId },
+        data: updateData,
+      });
+
+      // Create timer log if timer was cancelled
+      if (shouldCancelTimer) {
+        const remainingSeconds = outlet.timerEndsAt
+          ? Math.max(
+              0,
+              Math.floor((outlet.timerEndsAt.getTime() - Date.now()) / 1000),
+            )
+          : 0;
+
+        await this.prisma.timerLog.create({
+          data: {
+            outletID: outletId,
+            status: 'POWER_OFF',
+            durationSeconds: outlet.timerDuration ?? undefined,
+            remainingSeconds,
+            note: 'Timer cancelled - outlet turned OFF by physical button',
+            source: outlet.timerSource ?? null,
+          },
+        });
+
+        // Publish timer stop command to STM32 (sync hardware state)
+        this.publishTimerStop(outletId, 'physical_button');
+
+        const outletName = outlet.name || `Outlet ${outlet.index || outletId}`;
+        console.log(
+          `⏱️  Timer cancelled for ${outletName} (physical button OFF)`,
+        );
+      }
+
+      console.log(
+        `✅ Outlet ${outletId} state synced: ${newState ? 'ON' : 'OFF'}${shouldCancelTimer ? ' (timer cancelled)' : ''}`,
+      );
+    } catch (error) {
+      console.error(`Failed to sync state for outlet ${outletId}:`, error);
     }
   }
 
@@ -374,7 +539,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       // Get current outlet state and last update time
       const outlet = await this.prisma.outlet.findUnique({
         where: { outletID: outletId },
-        select: { state: true, runtime: true, lastRuntimeUpdate: true }
+        select: { state: true, runtime: true, lastRuntimeUpdate: true },
       });
 
       // Only increment runtime if outlet is ON
@@ -383,7 +548,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         const lastUpdate = outlet.lastRuntimeUpdate || now;
 
         // Calculate seconds elapsed since last update
-        const secondsElapsed = Math.floor((now.getTime() - lastUpdate.getTime()) / 1000);
+        const secondsElapsed = Math.floor(
+          (now.getTime() - lastUpdate.getTime()) / 1000,
+        );
 
         // Only update if at least 1 second has passed (prevent duplicate updates)
         if (secondsElapsed > 0) {
@@ -394,13 +561,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
             where: { outletID: outletId },
             data: {
               runtime: newRuntime,
-              lastRuntimeUpdate: now
-            }
+              lastRuntimeUpdate: now,
+            },
           });
 
           // Log every minute (when runtime crosses a minute boundary)
           if (Math.floor(newRuntime / 60) > Math.floor(currentRuntime / 60)) {
-            console.log(`⏱️  Outlet ${outletId} runtime: ${Math.floor(newRuntime / 60)} minutes`);
+            console.log(
+              `⏱️  Outlet ${outletId} runtime: ${Math.floor(newRuntime / 60)} minutes`,
+            );
           }
         }
       }
@@ -448,15 +617,23 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    console.log(`Outlet ${outletId} turned ${state ? 'ON' : 'OFF'}${state === false ? ' - runtime reset' : ''}`);
+    console.log(
+      `Outlet ${outletId} turned ${state ? 'ON' : 'OFF'}${state === false ? ' - runtime reset' : ''}`,
+    );
   }
 
   // Method to start timer on STM32
-  publishTimerStart(outletId: number, durationSeconds: number, source: string): void {
+  publishTimerStart(
+    outletId: number,
+    durationSeconds: number,
+    source: string,
+  ): void {
     const topic = `powerguard/${outletId}/timer/start`;
     const message = JSON.stringify({ durationSeconds, source });
     this.publish(topic, message);
-    console.log(`Published timer start command for outlet ${outletId}: ${durationSeconds}s`);
+    console.log(
+      `Published timer start command for outlet ${outletId}: ${durationSeconds}s`,
+    );
   }
 
   // Method to stop timer on STM32
