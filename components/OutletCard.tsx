@@ -61,6 +61,7 @@ const useTimerCountdown = (outlet: Outlet, overrideSeconds?: number | null, over
     }
     return isActive ? baseSeconds : null;
   });
+  const [lastEndsAt, setLastEndsAt] = useState<string | null>(timer?.endsAt ?? null);
 
   useEffect(() => {
     if (overrideIsActive) {
@@ -70,11 +71,25 @@ const useTimerCountdown = (outlet: Outlet, overrideSeconds?: number | null, over
 
     if (!isActive) {
       setSeconds(null);
+      setLastEndsAt(null);
       return;
     }
 
-    setSeconds(baseSeconds);
-  }, [overrideIsActive, overrideSeconds, isActive, baseSeconds]);
+    // Only reset countdown if:
+    // 1. Timer just became active (lastEndsAt was null)
+    // 2. Timer endsAt changed (timer restarted)
+    // 3. Large drift detected (>5 seconds difference)
+    const currentEndsAt = timer?.endsAt ?? null;
+    const shouldReset =
+      lastEndsAt === null ||
+      lastEndsAt !== currentEndsAt ||
+      (seconds !== null && Math.abs(seconds - baseSeconds) > 5);
+
+    if (shouldReset) {
+      setSeconds(baseSeconds);
+      setLastEndsAt(currentEndsAt);
+    }
+  }, [overrideIsActive, overrideSeconds, isActive, baseSeconds, timer?.endsAt, lastEndsAt, seconds]);
 
   useEffect(() => {
     if (overrideIsActive || !isActive) {
@@ -91,7 +106,7 @@ const useTimerCountdown = (outlet: Outlet, overrideSeconds?: number | null, over
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [overrideIsActive, isActive, timer?.remainingSeconds, timer?.durationSeconds]);
+  }, [overrideIsActive, isActive]); // Removed timer?.remainingSeconds and timer?.durationSeconds from dependencies
 
   return seconds;
 };
