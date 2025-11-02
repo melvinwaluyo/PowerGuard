@@ -612,13 +612,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const topic = `powerguard/${outletId}/control`;
     const message = JSON.stringify({ state });
 
-    // Publish with retain flag so STM32 receives state on reconnect/boot
+    // Publish with QoS 1 (at least once delivery) and retain flag for immediate delivery
     if (this.client && this.client.connected) {
-      this.client.publish(topic, message, { retain: true }, (err) => {
+      this.client.publish(topic, message, { qos: 1, retain: true }, (err) => {
         if (err) {
           console.error('Failed to publish control message:', err);
         } else {
-          console.log(`Published retained control message for outlet ${outletId}: ${state ? 'ON' : 'OFF'}`);
+          console.log(`Published control message for outlet ${outletId}: ${state ? 'ON' : 'OFF'} (QoS 1, retained)`);
         }
       });
     }
@@ -657,18 +657,34 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   ): void {
     const topic = `powerguard/${outletId}/timer/start`;
     const message = JSON.stringify({ durationSeconds, source });
-    this.publish(topic, message);
-    console.log(
-      `Published timer start command for outlet ${outletId}: ${durationSeconds}s`,
-    );
+
+    // Use QoS 1 for reliable delivery of timer commands
+    if (this.client && this.client.connected) {
+      this.client.publish(topic, message, { qos: 1 }, (err) => {
+        if (err) {
+          console.error(`Failed to publish timer start for outlet ${outletId}:`, err);
+        } else {
+          console.log(`Published timer start command for outlet ${outletId}: ${durationSeconds}s (QoS 1)`);
+        }
+      });
+    }
   }
 
   // Method to stop timer on STM32
   publishTimerStop(outletId: number, reason: string = 'cancelled'): void {
     const topic = `powerguard/${outletId}/timer/stop`;
     const message = JSON.stringify({ reason });
-    this.publish(topic, message);
-    console.log(`Published timer stop command for outlet ${outletId}`);
+
+    // Use QoS 1 for reliable delivery of timer commands
+    if (this.client && this.client.connected) {
+      this.client.publish(topic, message, { qos: 1 }, (err) => {
+        if (err) {
+          console.error(`Failed to publish timer stop for outlet ${outletId}:`, err);
+        } else {
+          console.log(`Published timer stop command for outlet ${outletId} (QoS 1)`);
+        }
+      });
+    }
   }
 
   /**
@@ -690,13 +706,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
       console.log(`[Sync] Syncing ${outlets.length} outlet states to MQTT with retain flag...`);
 
-      // Publish each outlet's state with retain flag
+      // Publish each outlet's state with QoS 1 and retain flag
       for (const outlet of outlets) {
         const topic = `powerguard/${outlet.outletID}/control`;
         const message = JSON.stringify({ state: outlet.state });
 
         if (this.client && this.client.connected) {
-          this.client.publish(topic, message, { retain: true }, (err) => {
+          this.client.publish(topic, message, { qos: 1, retain: true }, (err) => {
             if (err) {
               console.error(`[Sync] Failed to publish outlet ${outlet.outletID}:`, err);
             }
