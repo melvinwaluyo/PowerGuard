@@ -51,6 +51,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           console.log('Subscribed to powerguard/+/timer/status');
         }
       });
+      // Subscribe to sync requests from STM32
+      this.client.subscribe('powerguard/sync/request', (err) => {
+        if (err) {
+          console.error('Failed to subscribe to sync request topic:', err);
+        } else {
+          console.log('Subscribed to powerguard/sync/request');
+        }
+      });
+
+      // Sync all outlet states to MQTT with retain flag on startup
+      this.syncAllOutletsToMQTT();
     });
 
     this.client.on('message', async (topic, message) => {
@@ -131,6 +142,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       ) {
         const outletId = parseInt(parts[1]);
         await this.handleTimerStatus(outletId, data);
+      }
+
+      // Handle sync request: powerguard/sync/request
+      if (parts[0] === 'powerguard' && parts[1] === 'sync' && parts[2] === 'request') {
+        console.log('Received sync request from STM32, syncing all outlets...');
+        await this.syncAllOutletsToMQTT();
       }
     } catch (error) {
       console.error('Error processing MQTT message:', error);
@@ -594,7 +611,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   async controlOutlet(outletId: number, state: boolean): Promise<void> {
     const topic = `powerguard/${outletId}/control`;
     const message = JSON.stringify({ state });
-    this.publish(topic, message);
+
+    // Publish with retain flag so STM32 receives state on reconnect/boot
+    if (this.client && this.client.connected) {
+      this.client.publish(topic, message, { retain: true }, (err) => {
+        if (err) {
+          console.error('Failed to publish control message:', err);
+        } else {
+          console.log(`Published retained control message for outlet ${outletId}: ${state ? 'ON' : 'OFF'}`);
+        }
+      });
+    }
 
     // Update database - if turning OFF, also clear timer fields and reset runtime
     await this.prisma.outlet.update({
@@ -642,5 +669,47 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const message = JSON.stringify({ reason });
     this.publish(topic, message);
     console.log(`Published timer stop command for outlet ${outletId}`);
+  }
+
+  /**
+   * Sync all outlet states from database to MQTT with retain flag
+   * Called on backend startup and when STM32 requests sync
+   * This ensures STM32 gets correct state on boot/reconnect
+   */
+  async syncAllOutletsToMQTT(): Promise<void> {
+    try {
+      // Fetch all outlets from database
+      const outlets = await this.prisma.outlet.findMany({
+        select: {
+          outletID: true,
+          state: true,
+          name: true,
+          index: true,
+        },
+      });
+
+      console.log(`[Sync] Syncing ${outlets.length} outlet states to MQTT with retain flag...`);
+
+      // Publish each outlet's state with retain flag
+      for (const outlet of outlets) {
+        const topic = `powerguard/${outlet.outletID}/control`;
+        const message = JSON.stringify({ state: outlet.state });
+
+        if (this.client && this.client.connected) {
+          this.client.publish(topic, message, { retain: true }, (err) => {
+            if (err) {
+              console.error(`[Sync] Failed to publish outlet ${outlet.outletID}:`, err);
+            }
+          });
+
+          const outletName = outlet.name || `Outlet ${outlet.index || outlet.outletID}`;
+          console.log(`[Sync] ${outletName} (ID ${outlet.outletID}): ${outlet.state ? 'ON' : 'OFF'}`);
+        }
+      }
+
+      console.log(`[Sync] ✅ Sync complete - ${outlets.length} outlet states published with retain flag`);
+    } catch (error) {
+      console.error('[Sync] Error syncing outlets to MQTT:', error);
+    }
   }
 }
